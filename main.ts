@@ -6,6 +6,8 @@ var rootPath = __dirname;
 const app = express();
 app.use(bodyParser.json());
 
+const PORT = process.env.PORT || 3000;
+
 
 app.get('/chat/init', async (req, res) => {
     res.send(openaiClient.getInitMessages());
@@ -31,6 +33,6 @@ app.get('/chat/complete/mp3', async (req, res) => {
 
 app.use(express.static('public'));
 
-app.listen(3000, () => {
+app.listen(PORT, () => {
     console.log('Server started on http://localhost:3000');
 });

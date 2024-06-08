@@ -19,4 +19,4 @@ COPY . .
 
 EXPOSE 3000
 
-CMD ["ts-node", "main.ts"]
+CMD [ "npm", "start" ]
