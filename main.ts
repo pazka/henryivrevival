@@ -1,18 +1,30 @@
-import OpenAI from 'openai';
-import dotenv from 'dotenv';
+import * as openaiClient from './myOpenAi';
+import express from 'express';
 
-dotenv.config();
+const app = express();
 
-const openai = new OpenAI({
-  apiKey: process.env['OPENAI_API_KEY'], // This is the default and can be omitted
+//server static in public folder
+app.use(express.static('public'));
+
+app.post('/chat', async (req, res) => {
+    await openaiClient.initChat();
 });
 
-async function main() {
-  const params: OpenAI.Chat.ChatCompletionCreateParams = {
-    messages: [{ role: 'user', content: 'Say this is a test' }],
-    model: 'gpt-4o-2024-05-13',
-  };
-  const chatCompletion: OpenAI.Chat.ChatCompletion = await openai.chat.completions.create(params);
-}
+app.get('/chat/init', async (req, res) => {
+    res.send(openaiClient.getInitMessages());
+});
 
-main();
+
+app.post('/chat/send', async (req, res) => {
+
+    const allMessages = req.body;
+    const completion = await openaiClient.completeMessages(allMessages);
+    await openaiClient.createMp3FromText(completion || 'Il sembleque je n\'ai pas de réponse à vous donner, je suis désolé.');
+
+    res.send(completion);
+});
+
+app.get('/chat/complete/mp3', async (req, res) => {
+    res.sendFile(openaiClient.TMP_AUDIO_FILE);
+});
+
