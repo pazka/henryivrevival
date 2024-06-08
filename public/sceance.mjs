@@ -3,7 +3,7 @@ import { startSpeechRecognition, stopSpeechRecognition } from './speech.mjs';
 
 //make a popup so the user interact with the webpage
 
-function makeInteraction(){
+function makeInteraction() {
     var popupWrapper = document.createElement("div");
     var popup = document.createElement("div");
     var title = document.createElement("h1");
@@ -25,7 +25,7 @@ function makeInteraction(){
     popup.classList.add("popup");
     document.body.appendChild(popupWrapper);
 
-    button.onclick = function(){
+    button.onclick = function () {
         popupWrapper.style.display = "none";
         displayState("APPARITION");
     }
@@ -102,12 +102,8 @@ export function displayState(desiredState) {
             document.getElementById('eyes').classList.remove('animate');
             document.getElementById('bg').classList.remove('active');
 
-
             document.getElementById('init_2').classList.add('active');
             document.getElementById('init_2').classList.add('animate');
-            document.getElementById('mouth').classList.add('active');
-            document.getElementById('mouth').classList.remove('animate');
-
             break;
     }
 }
@@ -127,14 +123,24 @@ export function interpretAnswer(gptAnswer) {
 }
 
 var audio = document.getElementById('audio');
-        
-audio.addEventListener('ended', function() {
-    displayState(STATES.LISTENING);
+
+audio.addEventListener('ended', function () {
+
+    if (currentState === STATES.GOODBYE) {
+        displayState(STATES.INIT);
+    } else {
+        displayState(STATES.LISTENING);
+    }
+
     startSpeechRecognition();
 });
 
-audio.addEventListener('play', function() {
-    displayState(STATES.TALKING);
+audio.addEventListener('play', function () {
+
+    if (currentState !== STATES.GOODBYE) {
+        displayState(STATES.TALKING);
+    }
+    
     stopSpeechRecognition();
 });
 
@@ -144,4 +150,4 @@ export function playAudio() {
     audio.play();
 }
 
-var currentState = STATES.INIT;
+export var currentState = STATES.INIT;

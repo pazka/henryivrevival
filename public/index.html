@@ -173,6 +173,7 @@
         .hidden {
             display: none;
         }
+
     </style>
 </head>
 
@@ -200,7 +201,7 @@
     <script type="module" src="sceance.mjs"></script>
     <script type="module">
         import {initChat, sendTextToServer } from './openai.mjs';
-        import {displayState,STATES} from './sceance.mjs';
+        import {displayState,STATES,currentState} from './sceance.mjs';
         import {initSpeechRecognition,setListener,startSpeechRecognition,stopSpeechRecognition} from './speech.mjs';
     
         if (window.location.href.includes('localhost')) {
@@ -222,7 +223,6 @@
         });
 
         setListener('speechend', function() {
-            displayState(STATES.LISTENING);
         });
         
         setListener('result', function(res) {
