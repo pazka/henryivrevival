@@ -11,7 +11,15 @@
     <title></title>
     <meta name="description" content="">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="favicon.jpg" type="image/x-icon">
     <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: black;
+        }
+
         #img-display {
             display: flex;
             justify-content: center;
@@ -26,6 +34,7 @@
 
         img {
             position: absolute;
+            margin: auto;
             top: 0;
             left: 0;
             width: 100%;
@@ -55,6 +64,10 @@
 
         img.animate.bg {
             animation: flashing 1s infinite;
+        }
+
+        img#ear.animate {
+            animation: ear_pulsing 1s infinite;
         }
 
         @keyframes flashing {
@@ -115,6 +128,20 @@
             }
         }
 
+        @keyframes ear_pulsing {
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.2);
+            }
+
+            100% {
+                transform: scale(1);
+            }
+        }
+
         .debug {
             position: relative;
             z-index: 100;
@@ -129,15 +156,41 @@
         <img class="bg" id="bg" src="scene_neutral_bg.jpg" alt="">
         <img id="eyes" src="eyes.png" alt="">
         <img id="mouth" src="mouth.png" alt="">
+        <img id="ear" src="ear.png" alt="">
     </div>
-    <div class="debug">
-        <button onclick="switchState()"> switchState</button>
+    <div class="debug hidden">
+        <textarea id="debug" cols="30" rows="10"></textarea>
+        <button onclick="send()">send</button>
+        <p id="debug-text"></p>
     </div>
-    <script >
-        const STATES = { 'INIT': 0, 'APPARITION': 1, 'LISTENING': 2, 'THINKING': 3, 'TALKING': 4, 'GOODBYE': 5 };
-        
-        function displayImgFromState(state) {
-            switch (state) {
+    <div class="hidden">
+        <audio id="audio">
+            Your browser does not support the audio element.
+        </audio>
+    </div>
+    <script>
+        if (window.location.href.includes('localhost')) {
+            document.getElementById('debug').classList.remove('hidden');
+        }
+
+        const STATES = { 'INIT': 'INIT', 'APPARITION': 'APARTION', 'LISTENING': 'LSTN', 'EARING': 'EARING', 'THINKING': 'THNK', 'TALKING': 'TLK', 'GOODBYE': 'BYE' };
+
+        function displayState(desiredState) {
+            console.log("trying to display state", desiredState, "from", currentState)
+
+
+            if (currentState === STATES.INIT && desiredState !== STATES.APPARITION) {
+                console.log("cannot go from init to", desiredState);
+                return;
+            }
+
+            if (currentState === STATES.GOODBYE && desiredState === STATES.LISTENING) {
+                desiredState = STATES.INIT;
+                return;
+            }
+
+            currentState = desiredState;
+            switch (desiredState) {
                 case STATES.INIT:
                     document.getElementById('init_2').classList.remove('active');
                     document.getElementById('init_2').classList.remove('animate');
@@ -154,6 +207,9 @@
                     document.getElementById('init_2').classList.remove('active');
                     document.getElementById('init_2').classList.remove('animate');
 
+                    document.getElementById('ear').classList.remove('active');
+                    document.getElementById('ear').classList.remove('animate');
+
                     document.getElementById('eyes').classList.add('active');
                     document.getElementById('mouth').classList.add('active');
                     document.getElementById('bg').classList.add('active');
@@ -161,34 +217,112 @@
                     document.getElementById('eyes').classList.remove('animate');
                     document.getElementById('mouth').classList.remove('animate');
                     break;
+                case STATES.EARING:
+                    document.getElementById('ear').classList.add('active');
+                    document.getElementById('ear').classList.add('animate');
+                    break;
                 case STATES.THINKING:
+                    document.getElementById('ear').classList.remove('active');
+                    document.getElementById('ear').classList.remove('animate');
+
                     document.getElementById('eyes').classList.add('animate');
                     break;
                 case STATES.TALKING:
+                    document.getElementById('ear').classList.remove('active');
+                    document.getElementById('ear').classList.remove('animate');
                     document.getElementById('eyes').classList.remove('animate');
+
                     document.getElementById('mouth').classList.add('animate');
                     break;
                 case STATES.GOODBYE:
                     document.getElementById('eyes').classList.remove('active');
                     document.getElementById('eyes').classList.remove('animate');
-                    document.getElementById('mouth').classList.remove('active');
-                    document.getElementById('mouth').classList.remove('animate');
                     document.getElementById('bg').classList.remove('active');
+
 
                     document.getElementById('init_2').classList.add('active');
                     document.getElementById('init_2').classList.add('animate');
+                    document.getElementById('mouth').classList.add('active');
+                    document.getElementById('mouth').classList.remove('animate');
+
                     break;
+            }
+
+
+        }
+
+        var debug = document.getElementById('debug');
+        var audio = document.getElementById('audio');
+
+        function send() {
+            text = debug.value;
+            sendTextToServer(text);
+        };
+
+        audio.addEventListener('play', function () {
+            displayState(STATES.TALKING);
+        });
+
+        audio.addEventListener('ended', function () {
+            displayState(STATES.LISTENING);
+        });
+
+        function interpretMessage(message) {
+            allMessages.push({ role: 'assistant', content: message });
+
+            if (message.toLowerCase().includes('whouu')) {
+                displayState(STATES.APPARITION);
+            }
+
+            if (message.toLowerCase().includes('hooo')) {
+                displayState(STATES.GOODBYE);
             }
         }
 
-        var currentState = STATES.INIT;
+        async function sendTextToServer(text) {
+            displayState(STATES.THINKING);
+            const res = await fetch('/chat/send', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ messages: [...allMessages, { role: 'user', content: text }] }),
+            }).catch((error) => {
+                console.error('Error:', error);
+            });
 
-        function switchState() {
-            console.log('currentState', currentState);
-            currentState = (currentState + 1) % 6;
-            displayImgFromState(currentState);
+            //if success play mp3
+            //play mp3 from server
+            if (res.status === 200) {
+                allMessages.push({ role: 'user', content: text });
+                interpretMessage(await res.text());
+                audio.src = 'chat/complete/mp3';
+                audio.play();
+            }
         }
 
+        var allMessages = []
+
+        //init chat from openai messages
+        fetch('/chat/init')
+            .then(response => response.json())
+            .then(data => {
+                allMessages = data;
+                console.log(allMessages);
+            });
+
+        var currentState = STATES.INIT;
+
+        function requestPermission() {
+            //play audio permission and microphone permission
+            navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+                .then(function (stream) {
+                    console.log('You let me use your mic!')
+                })
+                .catch(function (err) {
+                    console.log('No mic for you!')
+                });
+        }
     </script>
 </body>
 
