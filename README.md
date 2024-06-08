@@ -6,6 +6,10 @@ It uses OpenAI gpt0 and TTS to generate a text and read it out loud.
 
 It uses the native chrome SpeechToText API to listen to the user's voice and generate a response.
 
+## Go see it in production
+
+[Go to henryivrevival.hosh.it](https://henryivrevival.hosh.it)
+
 ## Usage
 
 ```bash
