@@ -19,10 +19,17 @@ Or use docker compose :
 ```yaml
 version: '3.3'
 services:
-  henryivrevival:
-    image: pazka/henryivrevival:latest
-    environment:
-      - OPENAI_API_KEY=<your_openai_api_key>
-    ports:
-      - "3000:3000"
+    henryivrevival:
+        restart: always
+        image: pazka/henryivrevival:latest
+        environment:
+            - OPENAI_API_KEY=<your_openai_api_key>
+        ports:
+            - "3000:3000"
+```
+
+WIth docker compose, you can use the same `.env` file as the one used for the development. with your `OPENAI_API_KEY` in it.
+
+```text
+OPENAI_API_KEY=<your_openai_api_key>
 ```
