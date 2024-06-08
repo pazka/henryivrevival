@@ -6,8 +6,6 @@ var rootPath = __dirname;
 const app = express();
 app.use(bodyParser.json());
 
-//server static in public folder
-
 
 app.get('/chat/init', async (req, res) => {
     res.send(openaiClient.getInitMessages());

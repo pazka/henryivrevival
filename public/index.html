@@ -8,7 +8,7 @@
 <head>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <title></title>
+    <title>Henry IV Revival 🕸🌛</title>
     <meta name="description" content="">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" href="favicon.jpg" type="image/x-icon">
@@ -18,6 +18,29 @@
             padding: 0;
             overflow: hidden;
             background-color: black;
+        }
+
+        .popup-wrapper{
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+        }
+        .popup {
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+
+        #debug-text {
+            color: white;
         }
 
         #img-display {
@@ -160,7 +183,7 @@
     </div>
     <div class="debug hidden">
         <textarea id="debug" cols="30" rows="10"></textarea>
-        <button onclick="send()">send</button>
+        <button onclick="debugSend()">send</button>
         <p id="debug-text"></p>
     </div>
     <div class="hidden">
@@ -168,161 +191,44 @@
             Your browser does not support the audio element.
         </audio>
     </div>
-    <script>
+    <script type="module" src="openai.mjs"></script>
+    <script type ="module" src="speech.mjs"></script>
+    <script type="module" src="sceance.mjs"></script>
+    <script type="module">
+        import {initChat, sendTextToServer } from './openai.mjs';
+        import {displayState,STATES} from './sceance.mjs';
+        import {initSpeechRecognition,setListener,startSpeechRecognition,stopSpeechRecognition} from './speech.mjs';
+    
         if (window.location.href.includes('localhost')) {
             document.getElementById('debug').classList.remove('hidden');
         }
 
-        const STATES = { 'INIT': 'INIT', 'APPARITION': 'APARTION', 'LISTENING': 'LSTN', 'EARING': 'EARING', 'THINKING': 'THNK', 'TALKING': 'TLK', 'GOODBYE': 'BYE' };
-
-        function displayState(desiredState) {
-            console.log("trying to display state", desiredState, "from", currentState)
-
-
-            if (currentState === STATES.INIT && desiredState !== STATES.APPARITION) {
-                console.log("cannot go from init to", desiredState);
-                return;
-            }
-
-            if (currentState === STATES.GOODBYE && desiredState === STATES.LISTENING) {
-                desiredState = STATES.INIT;
-                return;
-            }
-
-            currentState = desiredState;
-            switch (desiredState) {
-                case STATES.INIT:
-                    document.getElementById('init_2').classList.remove('active');
-                    document.getElementById('init_2').classList.remove('animate');
-
-                    document.getElementById('init_1').classList.add('active');
-                    break;
-                case STATES.APPARITION:
-                    document.getElementById('init_1').classList.remove('active');
-
-                    document.getElementById('init_2').classList.add('active');
-                    document.getElementById('init_2').classList.add('animate');
-                    break;
-                case STATES.LISTENING:
-                    document.getElementById('init_2').classList.remove('active');
-                    document.getElementById('init_2').classList.remove('animate');
-
-                    document.getElementById('ear').classList.remove('active');
-                    document.getElementById('ear').classList.remove('animate');
-
-                    document.getElementById('eyes').classList.add('active');
-                    document.getElementById('mouth').classList.add('active');
-                    document.getElementById('bg').classList.add('active');
-
-                    document.getElementById('eyes').classList.remove('animate');
-                    document.getElementById('mouth').classList.remove('animate');
-                    break;
-                case STATES.EARING:
-                    document.getElementById('ear').classList.add('active');
-                    document.getElementById('ear').classList.add('animate');
-                    break;
-                case STATES.THINKING:
-                    document.getElementById('ear').classList.remove('active');
-                    document.getElementById('ear').classList.remove('animate');
-
-                    document.getElementById('eyes').classList.add('animate');
-                    break;
-                case STATES.TALKING:
-                    document.getElementById('ear').classList.remove('active');
-                    document.getElementById('ear').classList.remove('animate');
-                    document.getElementById('eyes').classList.remove('animate');
-
-                    document.getElementById('mouth').classList.add('animate');
-                    break;
-                case STATES.GOODBYE:
-                    document.getElementById('eyes').classList.remove('active');
-                    document.getElementById('eyes').classList.remove('animate');
-                    document.getElementById('bg').classList.remove('active');
-
-
-                    document.getElementById('init_2').classList.add('active');
-                    document.getElementById('init_2').classList.add('animate');
-                    document.getElementById('mouth').classList.add('active');
-                    document.getElementById('mouth').classList.remove('animate');
-
-                    break;
-            }
-
-
-        }
-
+        initChat();
+        initSpeechRecognition();
         var debug = document.getElementById('debug');
-        var audio = document.getElementById('audio');
+        var debugText = document.getElementById('debug-text');
 
-        function send() {
+        function debugSend() {
             text = debug.value;
             sendTextToServer(text);
         };
 
-        audio.addEventListener('play', function () {
-            displayState(STATES.TALKING);
+        setListener('speechstart', function() {
+            displayState(STATES.EARING);
         });
 
-        audio.addEventListener('ended', function () {
+        setListener('speechend', function() {
             displayState(STATES.LISTENING);
         });
+        
+        setListener('result', function(res) {
+            console.log("SPEECH RESULT",res);
+            debugText.innerHTML = res;
+            stopSpeechRecognition();
+            sendTextToServer(res);
+        });
 
-        function interpretMessage(message) {
-            allMessages.push({ role: 'assistant', content: message });
-
-            if (message.toLowerCase().includes('whouu')) {
-                displayState(STATES.APPARITION);
-            }
-
-            if (message.toLowerCase().includes('hooo')) {
-                displayState(STATES.GOODBYE);
-            }
-        }
-
-        async function sendTextToServer(text) {
-            displayState(STATES.THINKING);
-            const res = await fetch('/chat/send', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ messages: [...allMessages, { role: 'user', content: text }] }),
-            }).catch((error) => {
-                console.error('Error:', error);
-            });
-
-            //if success play mp3
-            //play mp3 from server
-            if (res.status === 200) {
-                allMessages.push({ role: 'user', content: text });
-                interpretMessage(await res.text());
-                audio.src = 'chat/complete/mp3';
-                audio.play();
-            }
-        }
-
-        var allMessages = []
-
-        //init chat from openai messages
-        fetch('/chat/init')
-            .then(response => response.json())
-            .then(data => {
-                allMessages = data;
-                console.log(allMessages);
-            });
-
-        var currentState = STATES.INIT;
-
-        function requestPermission() {
-            //play audio permission and microphone permission
-            navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-                .then(function (stream) {
-                    console.log('You let me use your mic!')
-                })
-                .catch(function (err) {
-                    console.log('No mic for you!')
-                });
-        }
+        startSpeechRecognition();
     </script>
 </body>
 
