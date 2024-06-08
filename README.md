@@ -22,8 +22,6 @@ services:
     henryivrevival:
         restart: always
         image: pazka/henryivrevival:latest
-        environment:
-            - OPENAI_API_KEY=<your_openai_api_key>
         ports:
             - "3000:3000"
 ```
