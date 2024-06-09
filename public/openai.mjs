@@ -1,4 +1,4 @@
-import { displayState, interpretAnswer,STATES } from "./sceance.mjs";
+import { displayState, interpretAnswer, STATES } from "./sceance.mjs";
 
 export async function sendTextToServer(text, audio) {
     displayState(STATES.THINKING);
@@ -17,9 +17,9 @@ export async function sendTextToServer(text, audio) {
     //play mp3 from server
     if (res.status === 200) {
         let gptAnswer = await res.text();
-        appendMessages(text, gptAnswer);
+        if (!gptAnswer.includes('...')) {
+            appendMessages(text, gptAnswer);
 
-        if (gptAnswer.includes('...')) {
             interpretAnswer(gptAnswer);
         }
     }
@@ -27,7 +27,7 @@ export async function sendTextToServer(text, audio) {
 
 var allMessages = []
 
-export async function appendMessages(userText,responseText) {
+export async function appendMessages(userText, responseText) {
     allMessages.push({ role: 'user', content: userText });
     allMessages.push({ role: 'assistant', content: responseText });
 }
