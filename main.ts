@@ -26,7 +26,7 @@ app.post('/chat', async (req, res) => {
     await openaiClient.initChat();
 });
 
-app.get('/chat/complete/mp3', async (req, res) => {
+app.get('/chat/complete/mp3/*', async (req, res) => {
     res.sendFile(__dirname + '/' + openaiClient.TMP_AUDIO_FILE);
     //delete file afterwards
 });

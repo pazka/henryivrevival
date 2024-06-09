@@ -146,7 +146,7 @@ audio.addEventListener('play', function () {
 
 
 export function playAudio() {
-    audio.src = 'chat/complete/mp3';
+    audio.src = 'chat/complete/mp3/'+Math.random().toString(36).substring(7)+'.mp3';
     audio.play();
 }
 
