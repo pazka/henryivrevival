@@ -18,7 +18,10 @@ export async function sendTextToServer(text, audio) {
     if (res.status === 200) {
         let gptAnswer = await res.text();
         appendMessages(text, gptAnswer);
-        interpretAnswer(gptAnswer);
+
+        if (gptAnswer.includes('...')) {
+            interpretAnswer(gptAnswer);
+        }
     }
 }
 

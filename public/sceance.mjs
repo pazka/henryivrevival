@@ -136,8 +136,8 @@ audio.addEventListener('ended', function () {
 });
 
 audio.addEventListener('play', function () {
-
-    if (currentState !== STATES.GOODBYE) {
+    
+    if (currentState !== STATES.GOODBYE ) {
         displayState(STATES.TALKING);
     }
     
