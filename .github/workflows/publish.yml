@@ -21,6 +21,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Log in to Docker Hub
-      run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_LOGIN }}" --password-stdin
+      run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ vars.DOCKERHUB_LOGIN }}" --password-stdin
     - name: Push the Docker image
       run: docker push pazka/henryivrevival:latest
