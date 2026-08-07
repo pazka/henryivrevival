@@ -1,7 +1,7 @@
 # make a dockerfile for a ts-node application
 # use the lightest image possible 
 
-FROM node:20-alpine
+FROM node:25-alpine
 
 # Upgrade bundled npm (npm 10 ships tar <7.5.19, flagged by CVE-2026-59873)
 
