@@ -4,7 +4,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-dotenv.config();
+// quiet: dotenv 17+ logs "injected env" at every start by default; 16 was silent.
+dotenv.config({ quiet: true });
 
 // Outside the app directory, so the image can run with a read-only rootfs (tmpfs /tmp).
 export const TMP_AUDIO_FILE = path.join(os.tmpdir(), 'henry-tmp.mp3');
