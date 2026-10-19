@@ -19,7 +19,7 @@ docker build -t henryivrevival:smoke . && bash scripts/smoke.sh henryivrevival:s
 
 ## CI
 
-`ci.yml` (PRs, `main`, `agent/**`, no secret, pushes nothing): `server tests (node 20|26)`,
+`ci.yml` (PRs, `main`, `agent/**`, no secret, pushes nothing): `server tests (node 22|26)`,
 `container smoke`. `publish.yml` (legacy Docker Hub image) now only builds on PRs and pushes on `main`.
 
 ## What is covered (`test/server.test.js`, 10 tests)
@@ -65,6 +65,19 @@ is ever abused.
   `openai` SDK stays 4.49.1 (7.x is three majors away, Node ≥ 22: a separate, tested step).
 - `publish.yml`: PR builds no longer log in or push (Dependabot runs failed with "Username and password
   required", and a PR could have overwritten `:latest`); actions pinned by SHA (supersedes #1, #4, #8, #9).
+
+## Dependency majors (2026-10-19, branch agent/deps-majors)
+
+- `openai` 4.49.1 → 7.34.0: request bodies unchanged (asserted); the SDK now types `reasoning_effort`,
+  `max_completion_tokens`, `safety_identifier`, so the local type extension is gone. Needs Node ≥ 22: CI
+  matrix is now 22 | 26 (image: 26).
+- `express` 4 → 5: the mp3 route is `/chat/complete/mp3/{*file}` (bare `*` is refused by Express 5);
+  a listen error (port in use) is rethrown so the process still exits instead of logging "Server started".
+- `dotenv` 16 → 18: `config({ quiet: true })` keeps the start silent (17+ logs by default).
+- `@types/node` 26 and `@types/express` 5, Actions in `deploy.yml`/`release.yml` to the majors `ci.yml` already uses.
+- **`typescript` stays 5.x** (Dependabot #14 not taken): TS 7 is the native (Go) compiler without the JS
+  API that `ts-node` needs, so the app could not start. Moving to TS 7 means replacing `ts-node` by a `tsc`
+  build step, which changes the Dockerfile and how the tests start the server: a separate, owner-approved step.
 
 ## Known gaps (kept)
 
