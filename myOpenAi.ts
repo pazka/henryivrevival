@@ -42,13 +42,6 @@ Voici comment l'échange va se dérouler :
 // Said (in character) when the moderation endpoint flags the visitor's message.
 export const MODERATED_ANSWER = "Ventre-saint-gris ! De tels propos ne sauraient franchir le voile qui sépare nos mondes. Parlez autrement, mon ami.";
 
-// Fields OpenAI accepts that the pinned SDK (4.49) does not type yet; the SDK sends the body as given.
-type ChatParams = OpenAI.Chat.ChatCompletionCreateParamsNonStreaming & {
-  reasoning_effort?: 'none' | 'low' | 'medium' | 'high';
-  max_completion_tokens?: number;
-  safety_identifier?: string;
-};
-
 /** Only the visitor's and Henri's turns come from the browser; the system prompt is always the server's. */
 export function conversationFor(turns: { role: 'user' | 'assistant', content: string }[]): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
   return [...initMessages, ...turns];
@@ -56,19 +49,19 @@ export function conversationFor(turns: { role: 'user' | 'assistant', content: st
 
 /** true when OpenAI's (free) moderation endpoint flags the text. */
 export async function isFlagged(text: string): Promise<boolean> {
-  const res = await OpenAIClient.moderations.create({ model: 'omni-moderation-latest', input: text } as any);
+  const res = await OpenAIClient.moderations.create({ model: 'omni-moderation-latest', input: text });
   return res.results.some(r => r.flagged);
 }
 
 export async function completeMessages(turns: { role: 'user' | 'assistant', content: string }[], safetyIdentifier: string) {
-  const params: ChatParams = {
+  const params: OpenAI.Chat.ChatCompletionCreateParamsNonStreaming = {
     messages: conversationFor(turns),
     model: CHAT_MODEL,
     reasoning_effort: 'none',
     max_completion_tokens: MAX_COMPLETION_TOKENS,
     safety_identifier: safetyIdentifier,
   };
-  const chatCompletion: OpenAI.Chat.ChatCompletion = await OpenAIClient.chat.completions.create(params as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming);
+  const chatCompletion: OpenAI.Chat.ChatCompletion = await OpenAIClient.chat.completions.create(params);
   console.log(chatCompletion.choices[0].message.content);
   return chatCompletion.choices[0].message.content;
 }
@@ -84,7 +77,7 @@ export async function createMp3FromText(text: string) {
     input: text,
   };
 
-  const speech: any = await OpenAIClient.audio.speech.create(params);
+  const speech = await OpenAIClient.audio.speech.create(params);
   const buffer = Buffer.from(await speech.arrayBuffer());
   await fs.promises.writeFile(TMP_AUDIO_FILE, buffer);
 }
