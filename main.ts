@@ -41,13 +41,15 @@ app.post('/chat', async (req, res) => {
     res.status(204).end();
 });
 
-app.get('/chat/complete/mp3/*', async (req, res) => {
+app.get('/chat/complete/mp3/{*file}', async (req, res) => {
     if (!fs.existsSync(openaiClient.TMP_AUDIO_FILE)) return res.status(404).send('no audio yet');
     res.sendFile(openaiClient.TMP_AUDIO_FILE);
 });
 
 app.use(express.static('public'));
 
-app.listen(PORT, () => {
+app.listen(PORT, (err?: Error) => {
+    // Express 5 hands listen errors (e.g. port in use) to this callback instead of crashing: keep crashing.
+    if (err) throw err;
     console.log('Server started on http://localhost:3000');
 });
