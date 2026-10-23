@@ -17,6 +17,6 @@
   },
   "dependencies": {
     "dotenv": "^18.0.8",
-    "openai": "^7.34.0"
+    "openai": "^7.39.0"
   }
 }
