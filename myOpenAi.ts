@@ -41,7 +41,7 @@ Voici comment l'échange va se dérouler :
 // Said (in character) when the moderation endpoint flags the visitor's message.
 export const MODERATED_ANSWER = "Ventre-saint-gris ! De tels propos ne sauraient franchir le voile qui sépare nos mondes. Parlez autrement, mon ami.";
 
-// Fields OpenAI accepts that the pinned SDK (4.49) does not type yet; the SDK sends the body as given.
+// Fields OpenAI accepts that the SDK may not type yet; the SDK sends the body as given.
 type ChatParams = OpenAI.Chat.ChatCompletionCreateParamsNonStreaming & {
   reasoning_effort?: 'none' | 'low' | 'medium' | 'high';
   max_completion_tokens?: number;
