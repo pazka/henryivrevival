@@ -41,7 +41,7 @@ app.post('/chat', async (req, res) => {
     res.status(204).end();
 });
 
-app.get('/chat/complete/mp3/*', async (req, res) => {
+app.get('/chat/complete/mp3/{*splat}', async (req, res) => {
     if (!fs.existsSync(openaiClient.TMP_AUDIO_FILE)) return res.status(404).send('no audio yet');
     res.sendFile(openaiClient.TMP_AUDIO_FILE);
 });
