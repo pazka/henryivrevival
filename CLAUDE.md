@@ -1,7 +1,7 @@
 # CLAUDE.md — pazka/henryivrevival
 
-Séance web app: the browser talks to "Henri IV" (OpenAI chat + TTS) through `main.ts` (Express, run with
-ts-node), static UI in `public/`. `chatGuard.ts` protects `/chat/send`. Owner: Alexandre (pazka).
+Séance web app: the browser talks to "Henri IV" (OpenAI chat + TTS) through `main.ts` (Express; compiled by
+`tsc` (TypeScript 7) to `dist/`, run with `node dist/main.js`), static UI in `public/`. `chatGuard.ts` protects `/chat/send`. Owner: Alexandre (pazka).
 Read **TESTING.md** first (it explains each protection).
 
 ## Maintenance (autonomous agent)
