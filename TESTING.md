@@ -6,10 +6,10 @@ to OpenAI**: a local fake answers through `OPENAI_BASE_URL`, with a dummy key.
 ## Run it
 
 ```bash
-# server tests: black-box, spawn `ts-node main.ts` against a fake OpenAI
+# server tests: black-box, compile with tsc then spawn `node dist/main.js` against a fake OpenAI
 docker run --rm -v "$PWD":/src:ro node:26-alpine sh -c \
   'mkdir /a && cd /src && tar --exclude=./node_modules -cf - . | tar -xf - -C /a && cd /a \
-   && npm ci --ignore-scripts && node --test --test-reporter=spec test/server.test.js'
+   && npm ci --ignore-scripts && npx tsc && node --test --test-reporter=spec test/server.test.js'
 
 # container smoke: the built image hardened (non-root, read-only rootfs), fake OpenAI inside the container
 docker build -t henryivrevival:smoke . && bash scripts/smoke.sh henryivrevival:smoke
@@ -19,7 +19,8 @@ docker build -t henryivrevival:smoke . && bash scripts/smoke.sh henryivrevival:s
 
 ## CI
 
-`ci.yml` (PRs, `main`, `agent/**`, no secret, pushes nothing): `server tests (node 20|26)`,
+`ci.yml` (PRs, `main`, `agent/**`, no secret, pushes nothing): `server tests (node 20|26)` (`npm ci`,
+`npm run build`, tests),
 `container smoke`. `publish.yml` (legacy Docker Hub image) now only builds on PRs and pushes on `main`.
 
 ## What is covered (`test/server.test.js`, 10 tests)
@@ -66,7 +67,26 @@ is ever abused.
 - `publish.yml`: PR builds no longer log in or push (Dependabot runs failed with "Username and password
   required", and a PR could have overwritten `:latest`); actions pinned by SHA (supersedes #1, #4, #8, #9).
 
+## TypeScript 7: compiled build instead of ts-node (2026-10-26)
+
+- **Why**: TypeScript 7.0.2 (Dependabot #14) is the native compiler; its npm package no longer exposes the JS
+  compiler API, so `ts-node` crashed at start (`Cannot read properties of undefined (reading 'fileExists')`).
+- **What**: `ts-node` removed. `tsc` (TS 7, `npm run build`) compiles `*.ts` to `dist/` in a build stage of the
+  `Dockerfile`; the runtime stage has production dependencies only (`npm ci --omit=dev`: no typescript,
+  no `@types`) and runs `node dist/main.js` (`npm start`). `express` moved from devDependencies to
+  dependencies (it is needed at runtime; same version). `tsconfig.json`: only `outDir: ./dist` added; TS 7
+  compiles the code as is. The working directory stays `/usr/src/app`, so `express.static('public')` and
+  dotenv's `.env` resolve exactly as before; nothing is compiled or cached at start (read-only rootfs, ~1 s
+  faster start).
+- TS 7's `tsc` runs on `node:*-alpine` (musl): the npm package installs a static per-platform binary
+  (`@typescript/typescript-linux-x64`), no glibc needed. It works under Node 20 and 26, and the emitted
+  CommonJS (target es2016) runs on both, so the test matrix stays `[20, 26]`.
+- **Tests**: the server tests now spawn `node dist/main.js` (build first); assertions unchanged. Verified:
+  10/10 on node 20 and 26, `scripts/smoke.sh` green on the hardened image, and by hand the image's CMD with
+  the key and `OPENAI_BASE_URL` coming only from a mounted `.env` (page, `/openai.mjs`, `/chat/init`, chat
+  round-trip with that key, mp3 under a nested `/chat/complete/mp3/a/b.mp3`, `POST /chat` 204). Rollback in
+  `MIGRATIONS.md`.
+
 ## Known gaps (kept)
 
 - The mp3 is one shared file: two simultaneous visitors can hear each other's answer.
-- `ts-node` compiles at every start (~1 s); a `tsc` build step would be the next improvement.

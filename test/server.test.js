@@ -1,8 +1,9 @@
-// Upgrade safety net (see TESTING.md): black-box tests of main.ts, started the way the image does (ts-node).
+// Upgrade safety net (see TESTING.md): black-box tests of main.ts, started the way the image does
+// (compiled by tsc to dist/main.js, run with plain node: build first with `npx tsc`).
 // OpenAI is replaced by a local fake server through OPENAI_BASE_URL: no network, no key. They assert the
 // séance features and the protections of /chat/send (server-owned prompt, validation, moderation, limits,
 // origin, errors), and the exact requests sent to OpenAI.
-// Node built-ins only:  node --test --test-reporter=spec test/server.test.js
+// Node built-ins only:  npx tsc && node --test --test-reporter=spec test/server.test.js
 'use strict'
 
 const {test, before, after} = require('node:test')
@@ -57,7 +58,7 @@ const completion = content => ({
 
 async function startApp(port, env = {}) {
     let log = ''
-    const p = spawn(process.execPath, [path.join(ROOT, 'node_modules', 'ts-node', 'dist', 'bin.js'), 'main.ts'], {
+    const p = spawn(process.execPath, [path.join(ROOT, 'dist', 'main.js')], {
         cwd: ROOT,
         env: {...process.env, PORT: String(port), OPENAI_API_KEY: 'sk-test-not-a-key',
             OPENAI_BASE_URL: `http://127.0.0.1:${fake.address().port}/v1`, TMPDIR: require('node:os').tmpdir() + `/henry-${port}`, ...env},
@@ -67,7 +68,7 @@ async function startApp(port, env = {}) {
     p.stderr.on('data', d => { log += d })
     p.log = () => log
     apps.push(p)
-    const until = Date.now() + 60000 // ts-node compiles on start
+    const until = Date.now() + 60000
     while (!log.includes('Server started')) {
         if (Date.now() > until || p.exitCode !== null) throw new Error('app did not start:\n' + log)
         await new Promise(r => setTimeout(r, 100))
