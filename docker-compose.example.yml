@@ -1,0 +1,40 @@
+# henryivrevival on the hosh.it box (no secrets here). On the box it becomes
+# /srv/henryivrevival/docker-compose.yml, validated and pinned by `hosh-deploy register` (any later change
+# needs a re-register). Every site-specific value comes from henryivrevival.env (interpolation AND container env).
+# Box standard (hosh-migration 11-BOX-STANDARD.md): published on a LOOPBACK port only; the edge Traefik (host
+# network, file provider) routes henryivrevival.hosh.it to it (route rendered by hosh-deploy from
+# deploy/traefik-route.yml.tmpl).
+# No volume: the app is stateless. The conversation lives in the visitor's browser; the only file written is
+# the answer mp3 in /tmp (tmpfs).
+name: henryivrevival
+services:
+  henryivrevival:
+    image: ${APP_IMAGE:-ghcr.io/pazka/henryivrevival:latest}
+    container_name: henryivrevival
+    restart: unless-stopped
+    env_file: ./henryivrevival.env          # chmod 600 (OPENAI_API_KEY)
+    environment:
+      PORT: "8000"                          # box convention; the image defaults to 3000 (legacy compose)
+    # --- hardening (box standard) ---
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777             # answer mp3
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    user: "10001:10001"
+    pids_limit: 128
+    mem_limit: 512m
+    healthcheck:
+      # node itself checks GET /healthz on $PORT (200 + "status":"ok"); never calls OpenAI
+      test: ["CMD", "node", "/usr/src/app/check/healthcheck.js"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      start_interval: 2s
+      retries: 3
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+    ports:
+      - "${APP_BIND:-127.0.0.1:9139}:8000"  # loopback only, never 0.0.0.0

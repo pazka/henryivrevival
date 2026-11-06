@@ -2,13 +2,15 @@
 
 Séance web app: the browser talks to "Henri IV" (OpenAI chat + TTS) through `main.ts` (Express; compiled by
 `tsc` (TypeScript 7) to `dist/`, run with `node dist/main.js`), static UI in `public/`. `chatGuard.ts` protects `/chat/send`. Owner: Alexandre (pazka).
-Read **TESTING.md** first (it explains each protection).
+Read **TESTING.md** first (it explains each protection). Deployment: **DEPLOY.md** (hosh-deploy template app,
+host henryivrevival.hosh.it, `127.0.0.1:9139`; the legacy box compose must keep working until the cutover).
 
 ## Maintenance (autonomous agent)
 Goal: keep the base image, dependencies, OpenAI models and Actions current **without changing behaviour**.
-- **Gate = `ci` green**: `server tests (node 26)` + `container smoke` (incl. the Node runtime guardrail `scripts/check-node-version.sh`). Tests never call OpenAI.
-- **Branches**: work on `agent/<topic>`; CI runs without a PR. Never push to `main` (`deploy.yml`,
-  `release.yml`, `publish.yml` publish images from it), never tag. **The owner merges.**
+- **Gate = `ci` green**: `server tests (node 26)` + `container smoke` (incl. the Node runtime guardrail `scripts/check-node-version.sh`
+  and `scripts/compose-smoke.sh legacy|template`). Tests never call OpenAI.
+- **Branches**: work on `agent/<topic>`; CI runs without a PR. Never push to `main` (`build-scan-push.yml`,
+  `release.yml`, `publish.yml` publish images from it), never tag (a stable tag deploys to the box). **The owner merges.**
 - **Dependabot PRs**: green → summarise risk in a PR comment. Red → reproduce per TESTING.md, smallest fix on
   an `agent/` branch. Never weaken or delete a test, and never loosen a `/chat/send` protection to make one pass.
 - Watch OpenAI's deprecations page (https://developers.openai.com/api/docs/deprecations) for the chat and TTS

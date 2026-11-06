@@ -1,0 +1,22 @@
+# Rendered by hosh-deploy on the first deploy (copied at `register`) into
+# /root/hosh-deploy/edge/traefik/dynamic/henryivrevival.yml. @@TOKENS@@ are filled on the box.
+# hosh.it box standard: edge Traefik (host network, file provider) → loopback port of the container.
+# REVERT = delete this file (Traefik hot-reloads the directory).
+http:
+  routers:
+    henryivrevival:
+      rule: "Host(`@@HOST@@`)"
+      service: henryivrevival
+      entryPoints: [@@ENTRYPOINT@@]
+      middlewares: [henryivrevival-hsts]
+      tls: @@TLS@@
+  middlewares:
+    henryivrevival-hsts:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+  services:
+    henryivrevival:
+      loadBalancer:
+        servers:
+          - url: "http://@@BIND@@"

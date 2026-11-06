@@ -2,6 +2,21 @@
 
 Dated record of changes to how the app is built or run, with the way back.
 
+## 2026-11-06 — hosh-deploy template app (healthz, PORT 8000 compose, release → deploy)
+
+- **Change**: `GET /healthz` (key configured, static files, writable `/tmp`; never calls OpenAI, never shows the
+  key), image `HEALTHCHECK` (`node check/healthcheck.js`, on `$PORT`), `check/smoke.js` (POST_DEPLOY). Box files:
+  `deploy/hosh-deploy.conf` (BIND 127.0.0.1:9139), `deploy/traefik-route.yml.tmpl`, `docker-compose.example.yml`
+  (uid 10001, read-only, tmpfs, `PORT=8000`), `.env.example`, `DEPLOY.md` (incl. the cutover). Workflows:
+  `deploy.yml` (name `build-scan-push`) renamed `build-scan-push.yml` unchanged; new `deploy.yml` = hosh-deploy;
+  `release.yml` runs tests + all smokes before pushing, adds `:X.Y` and a GitHub release, and deploys stable tags
+  (no-op without `HOSH_DEPLOY_KEY`); Trivy from its pinned image instead of `trivy-action`.
+- **Unchanged**: default port 3000, user `node`, endpoints, env vars, `:vX.Y.Z` / `:latest` / `:<sha>` tags,
+  prerelease tags never move `:latest`, Docker Hub `publish.yml`. The legacy compose works as is (CI:
+  `compose-smoke.sh legacy`). Start-up log prints the real port (same text with the default).
+- **Box**: nothing until the cutover (DEPLOY.md §1c). The legacy container now shows a health status.
+- **Rollback**: redeploy the previous image (`v1.1.1`), or revert the merge commit on `main`.
+
 ## 2026-11-06 — Node 26.13.0 base image (CVE-2026-111497), Node 20 dropped from CI
 
 - **Change**: both Dockerfile stages `FROM node:26.13.0-alpine@sha256:8996bb58…` (was the floating `node:26-alpine`,
