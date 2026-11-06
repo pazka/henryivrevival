@@ -19,9 +19,13 @@ docker build -t henryivrevival:smoke . && bash scripts/smoke.sh henryivrevival:s
 
 ## CI
 
-`ci.yml` (PRs, `main`, `agent/**`, no secret, pushes nothing): `server tests (node 20|26)` (`npm ci`,
+`ci.yml` (PRs, `main`, `agent/**`, no secret, pushes nothing): `server tests (node 26)` (`npm ci`,
 `npm run build`, tests),
 `container smoke`. `publish.yml` (legacy Docker Hub image) now only builds on PRs and pushes on `main`.
+Every workflow that builds the image (`ci.yml` smoke, `deploy.yml`, `release.yml`, `publish.yml`) runs
+`scripts/check-node-version.sh <image>` right after the build and before any push: it fails if the image's Node
+is EOL or below the patched minimum of its line (CVE-2026-111497, pazka/hosh-management#5). `ci.yml` also
+asserts it rejects `node:24.21.0-alpine` (the test of the test).
 
 ## What is covered (`test/server.test.js`, 10 tests)
 
