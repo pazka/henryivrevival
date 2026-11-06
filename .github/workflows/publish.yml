@@ -24,11 +24,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Build and push Docker image
+      # Build and load locally first; the Node guardrail must pass before anything is pushed.
+      - name: Build Docker image
         id: push
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: ./Dockerfile
-          push: ${{ github.event_name == 'push' }}
+          load: true
+          push: false
           tags: pazka/henryivrevival:latest
+
+      - name: Node runtime guardrail (blocks the push of an EOL/unpatched Node, pazka/hosh-management#5)
+        run: bash scripts/check-node-version.sh pazka/henryivrevival:latest
+
+      - name: Push Docker image
+        if: github.event_name == 'push'
+        run: docker push pazka/henryivrevival:latest

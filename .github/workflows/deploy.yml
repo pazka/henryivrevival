@@ -25,6 +25,8 @@ jobs:
           context: .
           load: true
           tags: ghcr.io/pazka/henryivrevival:candidate
+      - name: Node runtime guardrail (blocks the push of an EOL/unpatched Node, pazka/hosh-management#5)
+        run: bash scripts/check-node-version.sh ghcr.io/pazka/henryivrevival:candidate
       - name: Trivy gate (fail on CRITICAL)
         uses: aquasecurity/trivy-action@v0.36.0
         with:

@@ -1,6 +1,6 @@
 # Node application compiled from TypeScript (main.ts -> dist/main.js), served on :3000.
 # Build stage: TypeScript 7 (native tsc, ships a static binary per platform, works on alpine/musl).
-FROM node:26-alpine AS build
+FROM node:26.13.0-alpine@sha256:8996bb5821d62a8fd9bb27c1cb07462f3fdce6e47d640c6a881ead0b064ce216 AS build
 WORKDIR /usr/src/app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -8,7 +8,7 @@ COPY tsconfig.json *.ts ./
 RUN npm run build
 
 # Runtime: production dependencies only, no compiler; nothing is compiled or cached at start.
-FROM node:26-alpine
+FROM node:26.13.0-alpine@sha256:8996bb5821d62a8fd9bb27c1cb07462f3fdce6e47d640c6a881ead0b064ce216
 WORKDIR /usr/src/app
 
 # Exact dependency tree from the lockfile, without devDependencies (typescript, @types/*).
