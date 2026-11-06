@@ -44,3 +44,5 @@ jobs:
       - name: guardrail bites (an unpatched Node image must be rejected)
         run: '! bash scripts/check-node-version.sh node:24.21.0-alpine'
       - run: bash scripts/smoke.sh henryivrevival:smoke
+      - name: legacy compose (the box's current compose, unchanged)
+        run: bash scripts/compose-smoke.sh legacy henryivrevival:smoke
