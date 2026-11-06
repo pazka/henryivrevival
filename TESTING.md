@@ -13,6 +13,9 @@ docker run --rm -v "$PWD":/src:ro node:26-alpine sh -c \
 
 # container smoke: the built image hardened (non-root, read-only rootfs), fake OpenAI inside the container
 docker build -t henryivrevival:smoke . && bash scripts/smoke.sh henryivrevival:smoke
+
+# compose smoke: the same image through `docker compose`, exactly as the box runs it today
+bash scripts/compose-smoke.sh legacy henryivrevival:smoke
 ```
 
 (Windows Git Bash: prefix `docker run` with `MSYS_NO_PATHCONV=1`, mount `"$(cygpath -w "$PWD")"`.)
@@ -38,6 +41,14 @@ sizes, last turn, 32 kB body limit) with nothing reaching OpenAI; foreign `Origi
 answers 502 and the server keeps running; per-visitor and global daily limits.
 
 `scripts/smoke.sh` repeats the round-trip and the protections against the built image.
+
+`scripts/compose-smoke.sh legacy` (step of `container smoke`) pins what the move to hosh-deploy must keep: it
+runs the image with the box's **current legacy compose** (verbatim: `env_file: .env`, `127.0.0.1:9988:3000`,
+`no-new-privileges`, `cap_drop: [ALL]`, `restart: always`, the image's own user `node`, writable rootfs) and
+checks the page, every file of `public/` byte for byte, `/chat/init`, `POST /chat`, the chat round-trip
+(moderation → completion → TTS → mp3), the `/chat/send` protections (validation, 32 kB limit, foreign
+origin, OpenAI error without crash), then the same after `docker compose restart` and after a re-create with
+the optional `OPENAI_CHAT_MODEL` / `OPENAI_TTS_MODEL` / `OPENAI_MAX_COMPLETION_TOKENS` overrides.
 
 ## How `/chat/send` is protected (and why)
 
