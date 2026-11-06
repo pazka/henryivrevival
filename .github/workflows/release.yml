@@ -1,93 +1,139 @@
 name: release
-# Release pipeline (hosh.it, P3.3): build -> Trivy (CRITICAL) -> push ghcr -> optional Dokploy webhook.
+# Release pipeline: tests → build → Node guard → Trivy (CRITICAL) → hardened smokes (image, legacy compose,
+# hosh-deploy compose) → push ghcr → GitHub release → deploy to the hosh.it box through hosh-deploy.
 #
 # Triggers
 #   - push of a tag matching v*          -> always runs. Pushes :<tag> and :<full sha>.
-#                                           :latest is pushed ONLY if the tag has no '-'
-#                                           (so prerelease tags like v1.0.0-rc.1 NEVER touch :latest).
-#   - push to main (default branch) -> runs ONLY if repo variable DEPLOY_TRIGGER == 'main'
+#                                           Stable vX.Y.Z also pushes :X.Y and :latest, creates the GitHub
+#                                           release and deploys (hosh-deploy). Prerelease tags (with a '-',
+#                                           v1.2.0-rc.1 …) NEVER touch :latest and are never deployed.
+#   - push to main (default branch)      -> runs ONLY if repo variable DEPLOY_TRIGGER == 'main'
 #                                           (opt-in; unset = tag-only releases, the job is skipped).
-#                                           Pushes :main-<shortsha>, :<full sha> and :latest.
-#   - workflow_dispatch                  -> always runs. From a tag ref it behaves like a tag push;
-#                                           from a branch ref it behaves like branch mode (:latest!).
+#                                           Pushes :main-<shortsha>, :<full sha> and :latest. No deploy.
+#   - workflow_dispatch with "version"   -> like a tag push of that version; the tag is created on the
+#                                           dispatched commit together with the GitHub release.
+#     workflow_dispatch without version  -> from a tag ref like a tag push; from a branch ref branch mode.
 #
 # Knobs (Settings -> Secrets and variables -> Actions)
 #   vars.DEPLOY_TRIGGER   'main' = every push to main releases :latest. Unset (default) = tags only.
 #   vars.TRIVY_POLICY     'warn' = CRITICAL findings are reported but do not block the push.
 #                         Anything else / unset (default) = CRITICAL findings fail the run (nothing pushed).
-#   secrets.DOKPLOY_WEBHOOK  Dokploy deploy-webhook URL, POSTed after :latest is pushed.
-#                         Unset/empty = a notice is printed and the run still succeeds.
+#   vars.HOSH_AUTODEPLOY  'false' = no auto-deploy after a release (Actions → deploy still works).
+#   secrets.HOSH_DEPLOY_KEY  deployer key bound to this app on the box; unset = deploy is a no-op notice.
+#   secrets.DOKPLOY_WEBHOOK  Dokploy deploy-webhook URL, POSTed after :latest is pushed. Unset = notice.
 #
-# The build-scan-push workflow (deploy.yml) is untouched: it keeps pushing :ci + :<sha> only.
+# The build-scan-push workflow (build-scan-push.yml) is untouched: it keeps pushing :ci + :<sha> only.
 on:
   push:
     tags: ['v*']
     branches: [main]
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag to create, e.g. v1.2.0 (empty = release the dispatched ref)"
+        required: false
 permissions:
   contents: read
-  packages: write
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 env:
   IMAGE: ghcr.io/pazka/henryivrevival
+  # Trivy from its image pinned by digest (no third-party action holding a token), as the box template.
+  TRIVY_IMAGE: mirror.gcr.io/aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa
 jobs:
-  release:
-    # Tag pushes and manual runs always go; branch pushes only when DEPLOY_TRIGGER == 'main'.
+  test:
+    name: server tests (node 26)
     if: github.event_name != 'push' || github.ref_type == 'tag' || vars.DEPLOY_TRIGGER == 'main'
     runs-on: ubuntu-latest
+    container: node:26-alpine
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - run: node --test --test-reporter=spec test/server.test.js
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # GitHub release (and its tag on a dispatch with a version)
+      packages: write
+    outputs:
+      primary: ${{ steps.meta.outputs.primary }}
+      deploy: ${{ steps.meta.outputs.deploy }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: compute release tags
         id: meta
         env:
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          if [ "$REF_TYPE" = "tag" ]; then
-            if ! printf '%s' "$REF_NAME" | grep -Eq '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$'; then
-              echo "::error::git tag '$REF_NAME' is not a valid docker tag"
+          minor=""; deploy=false; release=false
+          if [ -n "${INPUT_VERSION:-}" ] || [ "$REF_TYPE" = "tag" ]; then
+            primary="${INPUT_VERSION:-$REF_NAME}"
+            if ! printf '%s' "$primary" | grep -Eq '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$'; then
+              echo "::error::tag '$primary' is not a valid docker tag"
               exit 1
             fi
-            primary="$REF_NAME"
-            case "$REF_NAME" in
-              *-*) latest=false ;;   # prerelease (v1.0.0-rc.1 ...) -> never :latest
+            if [ -n "${INPUT_VERSION:-}" ] && ! printf '%s' "$primary" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+              echo "::error::version must be vX.Y.Z or vX.Y.Z-pre (got '$primary')"
+              exit 1
+            fi
+            case "$primary" in
+              *-*) latest=false ;;   # prerelease (v1.0.0-rc.1 ...) -> never :latest, never deployed
               *)   latest=true ;;
             esac
+            if printf '%s' "$primary" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+              minor="$(echo "${primary#v}" | cut -d. -f1,2)"; deploy=true
+            fi
+            printf '%s' "$primary" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' && release=true
           else
             primary="main-${SHA:0:7}"
             latest=true
           fi
-          echo "primary=$primary" >> "$GITHUB_OUTPUT"
-          echo "latest=$latest" >> "$GITHUB_OUTPUT"
-          echo "release tags: :$primary :$SHA (latest=$latest)"
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v7
+          {
+            echo "primary=$primary"; echo "latest=$latest"; echo "minor=$minor"
+            echo "deploy=$deploy"; echo "release=$release"
+          } >> "$GITHUB_OUTPUT"
+          echo "release tags: :$primary :$SHA ${minor:+:$minor }(latest=$latest, deploy=$deploy, github release=$release)"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           load: true
+          push: false
           tags: ghcr.io/pazka/henryivrevival:candidate
       - name: Node runtime guardrail (blocks the push of an EOL/unpatched Node, pazka/hosh-management#5)
         run: bash scripts/check-node-version.sh "$IMAGE:candidate"
       - name: Trivy scan (CRITICAL; blocking unless TRIVY_POLICY=warn)
-        uses: aquasecurity/trivy-action@v0.36.0
+        env:
+          EXIT_CODE: ${{ vars.TRIVY_POLICY == 'warn' && '0' || '1' }}
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE" image \
+            --severity CRITICAL --ignore-unfixed --exit-code "$EXIT_CODE" --no-progress \
+            --db-repository mirror.gcr.io/aquasec/trivy-db,ghcr.io/aquasecurity/trivy-db \
+            "$IMAGE:candidate"
+      - name: hardened smoke (image)
+        run: bash scripts/smoke.sh "$IMAGE:candidate"
+      - name: legacy compose (the box's current compose, unchanged)
+        run: bash scripts/compose-smoke.sh legacy "$IMAGE:candidate"
+      - name: hosh-deploy compose (register validation, healthcheck, POST_DEPLOY)
+        run: bash scripts/compose-smoke.sh template "$IMAGE:candidate"
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
-          image-ref: ghcr.io/pazka/henryivrevival:candidate
-          severity: CRITICAL
-          exit-code: ${{ vars.TRIVY_POLICY == 'warn' && '0' || '1' }}
-          ignore-unfixed: true
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: push release tags
         env:
           PRIMARY: ${{ steps.meta.outputs.primary }}
           LATEST: ${{ steps.meta.outputs.latest }}
+          MINOR: ${{ steps.meta.outputs.minor }}
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
@@ -95,11 +141,31 @@ jobs:
           docker tag "$IMAGE:candidate" "$IMAGE:$SHA"
           docker push "$IMAGE:$PRIMARY"
           docker push "$IMAGE:$SHA"
+          if [ -n "$MINOR" ]; then
+            docker tag "$IMAGE:candidate" "$IMAGE:$MINOR"
+            docker push "$IMAGE:$MINOR"
+          fi
           if [ "$LATEST" = "true" ]; then
             docker tag "$IMAGE:candidate" "$IMAGE:latest"
             docker push "$IMAGE:latest"
           else
             echo "::notice::prerelease tag $PRIMARY -> :latest left untouched"
+          fi
+      - name: GitHub release
+        if: steps.meta.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.primary }}
+          LATEST: ${{ steps.meta.outputs.latest }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then exit 0; fi
+          notes="Image: ${IMAGE}:${TAG}. Deployment: see DEPLOY.md."
+          pre=""; [ "$LATEST" = true ] || pre=--prerelease
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            gh release create "$TAG" --title "henryivrevival $TAG" --notes "$notes" --verify-tag $pre
+          else
+            gh release create "$TAG" --title "henryivrevival $TAG" --notes "$notes" --target "$GITHUB_SHA" $pre
           fi
       - name: trigger Dokploy deploy
         if: steps.meta.outputs.latest == 'true'
@@ -112,3 +178,14 @@ jobs:
             exit 0
           fi
           curl -fsS -X POST "$DOKPLOY_WEBHOOK"
+
+  # Box standard (Decision #16): every stable release goes live through hosh-deploy on the hosh.it box, which
+  # verifies it and rolls back by itself. A no-op notice until the repo has the HOSH_DEPLOY_KEY secret
+  # (cutover, DEPLOY.md §1c); repo variable HOSH_AUTODEPLOY=false disables it.
+  deploy:
+    needs: release
+    if: needs.release.outputs.deploy == 'true' && vars.HOSH_AUTODEPLOY != 'false'
+    uses: ./.github/workflows/deploy.yml
+    with:
+      version: ${{ needs.release.outputs.primary }}
+    secrets: inherit

@@ -1,0 +1,43 @@
+name: build-scan-push
+# Phase-2 CI (hosh.it): build -> Trivy gate (CRITICAL) -> push ghcr :ci + :sha.
+# Deliberately does NOT touch :latest - the box runs known-good mirrors. Promote a
+# validated build with: docker buildx imagetools create -t ghcr.io/pazka/henryivrevival:latest ghcr.io/pazka/henryivrevival:<sha>
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: ghcr.io/pazka/henryivrevival:candidate
+      - name: Node runtime guardrail (blocks the push of an EOL/unpatched Node, pazka/hosh-management#5)
+        run: bash scripts/check-node-version.sh ghcr.io/pazka/henryivrevival:candidate
+      - name: Trivy gate (fail on CRITICAL)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ghcr.io/pazka/henryivrevival:candidate
+          severity: CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+      - name: push ci + sha tags
+        if: success()
+        run: |
+          docker tag ghcr.io/pazka/henryivrevival:candidate ghcr.io/pazka/henryivrevival:ci
+          docker tag ghcr.io/pazka/henryivrevival:candidate ghcr.io/pazka/henryivrevival:${{ github.sha }}
+          docker push ghcr.io/pazka/henryivrevival:ci
+          docker push ghcr.io/pazka/henryivrevival:${{ github.sha }}

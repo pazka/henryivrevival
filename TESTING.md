@@ -16,6 +16,7 @@ docker build -t henryivrevival:smoke . && bash scripts/smoke.sh henryivrevival:s
 
 # compose smoke: the same image through `docker compose`, exactly as the box runs it today
 bash scripts/compose-smoke.sh legacy henryivrevival:smoke
+bash scripts/compose-smoke.sh template henryivrevival:smoke   # hosh-deploy compose (uses 127.0.0.1:9139)
 ```
 
 (Windows Git Bash: prefix `docker run` with `MSYS_NO_PATHCONV=1`, mount `"$(cygpath -w "$PWD")"`.)
@@ -24,13 +25,15 @@ bash scripts/compose-smoke.sh legacy henryivrevival:smoke
 
 `ci.yml` (PRs, `main`, `agent/**`, no secret, pushes nothing): `server tests (node 26)` (`npm ci`,
 `npm run build`, tests),
-`container smoke`. `publish.yml` (legacy Docker Hub image) now only builds on PRs and pushes on `main`.
-Every workflow that builds the image (`ci.yml` smoke, `deploy.yml`, `release.yml`, `publish.yml`) runs
+`container smoke` (`scripts/smoke.sh`, then `scripts/compose-smoke.sh legacy` and `template`). `release.yml`
+runs the same tests and smokes before any push, then deploys stable tags through `deploy.yml` (hosh-deploy, a
+no-op until the `HOSH_DEPLOY_KEY` secret exists; DEPLOY.md). `publish.yml` (legacy Docker Hub image) now only builds on PRs and pushes on `main`.
+Every workflow that builds the image (`ci.yml` smoke, `build-scan-push.yml`, `release.yml`, `publish.yml`) runs
 `scripts/check-node-version.sh <image>` right after the build and before any push: it fails if the image's Node
 is EOL or below the patched minimum of its line (CVE-2026-111497, pazka/hosh-management#5). `ci.yml` also
 asserts it rejects `node:24.21.0-alpine` (the test of the test).
 
-## What is covered (`test/server.test.js`, 10 tests)
+## What is covered (`test/server.test.js`, 14 tests)
 
 Page, `/chat/init` (system prompt), mp3 404 before any answer, `POST /chat` 204; a chat round-trip with the
 exact OpenAI requests (moderation of the visitor text, completion with `gpt-5.6-sol`, `reasoning_effort:
@@ -38,7 +41,9 @@ none`, `max_completion_tokens: 500`, a hashed `safety_identifier` stable per vis
 `fable`) and the mp3 served; a tampered system prompt from the browser is dropped; empty completion voiced
 with the apology; flagged text gets the in-character refusal without a completion; validation (shape, roles,
 sizes, last turn, 32 kB body limit) with nothing reaching OpenAI; foreign `Origin` refused; an OpenAI error
-answers 502 and the server keeps running; per-visitor and global daily limits.
+answers 502 and the server keeps running; per-visitor and global daily limits; `/healthz` (200 with the
+capability fields, key never shown, no OpenAI call); no key ⇒ the server does not start; `check/smoke.js` (the
+POST_DEPLOY of hosh-deploy) passes against a running server without calling OpenAI and fails when it is down.
 
 `scripts/smoke.sh` repeats the round-trip and the protections against the built image.
 
@@ -48,7 +53,14 @@ runs the image with the box's **current legacy compose** (verbatim: `env_file: .
 checks the page, every file of `public/` byte for byte, `/chat/init`, `POST /chat`, the chat round-trip
 (moderation → completion → TTS → mp3), the `/chat/send` protections (validation, 32 kB limit, foreign
 origin, OpenAI error without crash), then the same after `docker compose restart` and after a re-create with
-the optional `OPENAI_CHAT_MODEL` / `OPENAI_TTS_MODEL` / `OPENAI_MAX_COMPLETION_TOKENS` overrides.
+the optional `OPENAI_CHAT_MODEL` / `OPENAI_TTS_MODEL` / `OPENAI_MAX_COMPLETION_TOKENS` overrides; the
+container must also turn healthy (image `HEALTHCHECK` on port 3000).
+
+`scripts/compose-smoke.sh template` runs the same checks with what the box will run after the cutover:
+`docker-compose.example.yml` + `.env.example` (uid 10001, read-only rootfs, tmpfs `/tmp`, `PORT=8000`,
+`127.0.0.1:9139`), after `hosh-deploy register`'s validation (conf fields, `# required: OPENAI_API_KEY`, the
+compose hardening check verbatim), and what `hosh-deploy deploy` verifies (healthy, uid 10001, read-only
+rootfs, no mounts, `/healthz` body, the `POST_DEPLOY` argv of `deploy/hosh-deploy.conf` inside the container).
 
 ## How `/chat/send` is protected (and why)
 

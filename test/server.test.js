@@ -206,3 +206,46 @@ test('rate limits: per visitor per minute, and a global daily budget', async () 
     const over = await send(b3, [{role: 'user', content: 'Bonjour'}], {'x-forwarded-for': '10.0.0.3'})
     assert.deepEqual([over.status, await over.text()], [429, 'Henri IV se repose. Revenez demain.'])
 })
+
+test('/healthz proves capability without calling OpenAI or showing the key', async () => {
+    calls.length = 0
+    const r = await fetch(base + '/healthz')
+    const text = await r.text()
+    assert.equal(r.status, 200)
+    assert.equal(r.headers.get('cache-control'), 'no-store')
+    assert.deepEqual(JSON.parse(text), {status: 'ok', openai_key: true, static_files: true, tmp_writable: true,
+        chat_model: 'gpt-5.6-sol', tts_model: 'tts-1'})
+    assert.ok(!text.includes('sk-test-not-a-key'), 'key leaked')
+    assert.equal((await fetch(base + '/healthz', {method: 'HEAD'})).status, 200)
+    assert.equal(calls.length, 0, 'nothing reaches OpenAI')
+})
+
+test('without an OpenAI key the server refuses to start (so a deploy without the secret never goes healthy)', async () => {
+    await assert.rejects(startApp(3104, {OPENAI_API_KEY: ''}), /app did not start[\s\S]*OPENAI_API_KEY/)
+})
+
+test('check/smoke.js (POST_DEPLOY) passes against a running server without calling OpenAI', async () => {
+    calls.length = 0
+    const out = await new Promise((resolve, reject) => {
+        const p = spawn(process.execPath, [path.join(ROOT, 'check', 'smoke.js'), base], {env: {...process.env, OPENAI_API_KEY: 'sk-test-not-a-key'}})
+        let log = ''
+        p.stdout.on('data', d => { log += d })
+        p.stderr.on('data', d => { log += d })
+        p.on('error', reject)
+        p.on('exit', code => resolve({code, log}))
+    })
+    assert.equal(out.code, 0, out.log)
+    assert.match(out.log, /SMOKE OK/)
+    assert.equal(calls.length, 0, 'nothing reaches OpenAI')
+})
+
+test('check/smoke.js fails when the server does not answer (so hosh-deploy rolls back)', async () => {
+    const out = await new Promise(resolve => {
+        const p = spawn(process.execPath, [path.join(ROOT, 'check', 'smoke.js'), 'http://127.0.0.1:3199'])
+        let log = ''
+        p.stdout.on('data', d => { log += d })
+        p.on('exit', code => resolve({code, log}))
+    })
+    assert.equal(out.code, 1, out.log)
+    assert.match(out.log, /FAIL \/healthz/)
+})
