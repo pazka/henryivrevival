@@ -122,7 +122,7 @@ OpenAI (`scripts/smoke.sh`, `scripts/compose-smoke.sh`).
 
 | Item | Value |
 |---|---|
-| Image | `ghcr.io/pazka/henryivrevival:vX.Y.Z` (node:26.13.0-alpine, pinned digest) |
+| Image | `ghcr.io/pazka/henryivrevival:vX.Y.Z` (node:26.13.1-alpine, pinned digest) |
 | Upstream | container :8000 → `127.0.0.1:9139` (legacy: :3000 → `127.0.0.1:9988`) |
 | Edge | `/root/hosh-deploy/edge/traefik/dynamic/henryivrevival.yml` (router `henryivrevival@file`, resolver `le`, HSTS) |
 | Volume | none (stateless); `/tmp` tmpfs 16 MB for the answer mp3 |
