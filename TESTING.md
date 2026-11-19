@@ -25,7 +25,8 @@ bash scripts/compose-smoke.sh template henryivrevival:smoke   # hosh-deploy comp
 
 `ci.yml` (PRs, `main`, `agent/**`, no secret, pushes nothing): `server tests (node 26)` (`npm ci`,
 `npm run build`, tests),
-`container smoke` (`scripts/smoke.sh`, then `scripts/compose-smoke.sh legacy` and `template`). `release.yml`
+`container smoke` (`scripts/smoke.sh`, then `scripts/compose-smoke.sh legacy` and `template`), `visual regression`
+(`visual/run.sh`, see "Visual use cases"; shots, diffs and `report.json` uploaded as the artifact `visual-<sha>`). `release.yml`
 runs the same tests and smokes before any push, then deploys stable tags through `deploy.yml` (hosh-deploy, a
 no-op until the `HOSH_DEPLOY_KEY` secret exists; DEPLOY.md). `publish.yml` (legacy Docker Hub image) now only builds on PRs and pushes on `main`.
 Every workflow that builds the image (`ci.yml` smoke, `build-scan-push.yml`, `release.yml`, `publish.yml`) runs
@@ -61,6 +62,69 @@ container must also turn healthy (image `HEALTHCHECK` on port 3000).
 `127.0.0.1:9139`), after `hosh-deploy register`'s validation (conf fields, `# required: OPENAI_API_KEY`, the
 compose hardening check verbatim), and what `hosh-deploy deploy` verifies (healthy, uid 10001, read-only
 rootfs, no mounts, `/healthz` body, the `POST_DEPLOY` argv of `deploy/hosh-deploy.conf` inside the container).
+
+## Visual use cases (visual regression, hosh-management AGENTS.md §3)
+
+`visual/run.sh IMAGE` (CI job `visual regression`): the built image runs as `docker-compose.example.yml` does
+(uid 10001, read-only rootfs, tmpfs `/tmp`, cap_drop ALL, no-new-privileges, pids/memory limits, `PORT=8000`) with
+a **dummy key** and `OPENAI_BASE_URL` pointing at `visual/fake-openai.mjs`: a fake OpenAI run by the image's own
+node in its own hardened container, on an `--internal` docker network of the runner. It answers fixed text
+chosen from the visitor's last message and 30 s of silent mp3 for every answer; `run.sh` fails if the app did not
+call it (moderation, completion, speech) with the dummy key. The rate limits are raised for the run (every request
+comes from one address); they are tested by `test/server.test.js`.
+`visual/shoot.mjs` runs with the image's own node (no package): two headless Chromes of the runner (mouse for
+1400 / 1024, touch for 390) open `http://henry.test:9877`; every other host resolves to nothing. Chrome treats
+that origin as secure (the live site is https: `speech.mjs` needs `navigator.mediaDevices`), uses its fake
+microphone, and plays audio muted without a gesture.
+
+The séance is driven by the visitor's **voice** and Henri answers with **audio**: a headless Chrome has neither.
+Before the page's scripts, the harness replaces `webkitSpeechRecognition` with a stand-in it makes "hear" a
+sentence (`speechstart`, then the recognition `result`, as Chrome fires them) and records the status of each
+`POST /chat/send`; to end an answer it seeks Henri's audio to its end (the page's own `ended` handler runs).
+Everything else is the page's own code. For stable pictures transitions are cut and the scene's CSS animations
+(flashing apparition, moving eyes and mouth, pulsing ear) are **paused at 250 ms** of their 1 s cycle: eyes 20 px
+left, mouth 20 px down, ear x1.1, apparition half visible, so the states that only animate still show.
+Every case is shot at **1400, 1024 and 390 px** (height 900, phone 844) by a new visitor (new browser context) and
+compared with `visual/baseline/<id>-<width>.png` (tolerance: channel 24, 0.1 % of the pixels). A page exception, a
+missing picture or an `alert()` fails the shot.
+
+| id | page / state | steps |
+|---|---|---|
+| V1-welcome | `/`: the séance table (`scene.jpg`) under the popup "Bienvenue sur le site de la séance de spiritisme" + "Commencer" | none |
+| V2-started | popup closed, still `scene.jpg` (state INIT, see below) | click / tap "Commencer" |
+| V3-apparition | Henri's first answer ("Whouuu... je suis l'esprit d'Henri IV"): the apparition (`scene_apparition.jpg`, flashing) while he speaks | V2, say "Bonjour Henri" |
+| V4-listening | his answer over: Henri's face, eyes and mouth on the neutral scene (`scene_neutral_bg.jpg`) | V3, his audio ends |
+| V5-hearing | the visitor starts speaking: Henri's ear (pulsing) over his face | V4, `speechstart` |
+| V6-thinking | question sent, answer not back yet: the eyes move (ear gone) | V4, say a question the fake never answers ("SUSPENS...") |
+| V7-talking | the answer to a question plays: the mouth moves | V4, say "Quelle fut votre plus grande bataille ?" |
+| V8-goodbye | the farewell ("Hooo... Adieu, Adieu, Adieu") plays: the apparition flashes again, the neutral scene and eyes are gone | V4, say "Adieu Henri" |
+| V9-after-goodbye | farewell over: back to `scene.jpg` (state INIT) | V8, his audio ends |
+| V10-openai-error | OpenAI fails (`/chat/send` → 502): the page stays as while thinking (eyes moving), nothing is said | V4, say "BOOM" (the fake answers 400) |
+
+States with the same picture as a case above (not shot again): a question that gets "..." from Henri (ignored by
+`openai.mjs`: stays as V6), a refused question (429 rate limit, 400 validation, 403 origin: stays as V6), the
+moderated in-character refusal (a normal answer: as V7), an answer without "whouu" before the apparition (stays
+as V2: INIT accepts only the apparition).
+
+What the pictures show today, pinned on purpose (not bugs fixed by the harness):
+- "Commencer" asks for the state `"APPARITION"`, but `sceance.mjs` names it `STATES.APPARITION = 'APARTION'`, so
+  the state stays INIT: the apparition only comes with Henri's first answer (V3), not on the click (V2).
+- The mouth picture is never turned off: it stays over the apparition in V8 and floats alone over the table in V9.
+- No mobile layout: the scene is as high as the screen and anchored left, so at 390 px Henri (in the middle of
+  the scene) is off screen; every phone shot after V1 shows the same candles.
+- The debug text box of `index.html` is never shown (the class is removed from the textarea, not its hidden parent).
+
+Not covered, and why:
+- Real speech recognition and real audio output: none on a runner (stand-in described above).
+- Two visitors at once (they share one mp3, see Known gaps): the same pictures.
+- After V9 the page is back in INIT and ignores further speech: same picture as V9.
+
+New or changed baselines (a wanted visual change, said in the PR): CI prints every failing shot in the log
+(`VISUAL-PNG` lines); `node visual/from-log.mjs <job log> visual/baseline --chrome` writes them back with their
+sha256 checked. Look at every picture before committing it. Baselines are only meaningful for the runner's Chrome
+(`visual/baseline/chrome.txt`); a local run with another Chrome may differ.
+Local run: `docker build -t henryivrevival:smoke . && CHROME=/path/to/chrome bash visual/run.sh`
+(`ONLY=V7 bash visual/run.sh` shoots only the cases whose id starts with V7).
 
 ## How `/chat/send` is protected (and why)
 
