@@ -176,4 +176,6 @@ phone.close();
 writeFileSync(join(OUT, "report.json"), JSON.stringify(report, null, 2));
 console.log(`\n${report.shots.length} shots, ${report.failures.length} failure(s)`);
 for (const f of report.failures) console.log(`  - ${f.name}: ${f.reason}`);
-process.exit(report.failures.length ? 1 : 0);
+// exit only once stdout is written out: a plain process.exit() lost the end of the VISUAL-PNG lines in CI
+process.exitCode = report.failures.length ? 1 : 0;
+process.stdout.write("", () => process.exit());

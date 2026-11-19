@@ -84,11 +84,25 @@ rm -rf "$OUT"; mkdir -p "$OUT"; chmod 777 "$OUT"
 set +e
 dk run --rm --network host "${HARDEN[@]}" \
   -e CDP_DESKTOP=$CDP_DESKTOP -e CDP_PHONE=$CDP_PHONE -e OUT=/out -e BASELINE=/v/baseline/ \
-  -e VISUAL_PRINT_NEW="${VISUAL_PRINT_NEW:-}" -e ONLY="${ONLY:-}" \
+  -e ONLY="${ONLY:-}" \
   -v "$ROOT/visual:/v:ro" -v "$ROOT/$OUT:/out" --entrypoint node "$IMAGE" \
   /v/shoot.mjs "http://henry.test:$PORT" "$@"
 rc=$?
 set -e
+
+# VISUAL_PRINT_NEW=1: every failing shot is printed in the log as VISUAL-PNG lines (visual/from-log.mjs). Printed
+# here from the files in $OUT: ~1 MB per shot, and the end of a long output of `docker run` was lost in CI.
+if [ -n "${VISUAL_PRINT_NEW:-}" ] && [ -f "$OUT/report.json" ]; then
+  dk run --rm "${HARDEN[@]}" --network none -v "$ROOT/$OUT:/out:ro" --entrypoint node "$IMAGE" \
+    -e 'for (const f of require("/out/report.json").failures) console.log(f.name)' >"$LOGS/failed.txt"
+  while read -r name; do
+    [[ "$name" =~ ^[A-Za-z0-9._-]+\.png$ ]] && [ -f "$OUT/$name" ] || continue
+    sum="$(sha256sum "$OUT/$name" | cut -d' ' -f1)"
+    base64 -w 8000 "$OUT/$name" >"$LOGS/b64"
+    n="$(wc -l <"$LOGS/b64")"; i=0
+    while read -r chunk; do i=$((i + 1)); echo "VISUAL-PNG $name $i/$n $sum $chunk"; done <"$LOGS/b64"
+  done <"$LOGS/failed.txt"
+fi
 
 # Logs go to files first, then grep the files (a `docker logs | grep -q` pipe under pipefail can fail on SIGPIPE).
 dk logs "$NAME" >"$LOGS/app.log" 2>&1 || true
