@@ -29,5 +29,10 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --start-interval=2s --retries=3 \
   CMD ["node", "/usr/src/app/check/healthcheck.js"]
 
-# Same as "npm start" (node dist/main.js) without npm at runtime.
+# Release tag, the `version` of every log line (release.yml passes it; any other build says "dev").
+ARG VERSION=dev
+ENV APP_VERSION=${VERSION}
+
+# Same as "npm start" (node dist/main.js) without npm at runtime: node is PID 1 and gets docker's SIGTERM itself
+# (the shutdown log line), and stdout stays one JSON object per line (no npm banner).
 CMD [ "node", "dist/main.js" ]

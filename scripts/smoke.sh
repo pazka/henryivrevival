@@ -82,5 +82,32 @@ step "protections: validation, foreign origin, OpenAI error does not crash"
 step "no crash in logs"
 if dk logs "$NAME" 2>&1 | grep -E 'UnhandledPromiseRejection|Uncaught|TSError'; then fail "errors in container log"; fi
 
+step "logs: one JSON object per line on stdout, startup / request_failed / shutdown (hosh-management AGENTS.md section 11)"
+dk stop -t 10 "$NAME" >/dev/null
+[ "$(dk inspect --format '{{.State.ExitCode}}' "$NAME")" = 0 ] || fail "exit code after docker stop is not 0 (no SIGTERM handler?)"
+dk logs "$NAME" 2>"$TMP/stderr.log" >"$TMP/stdout.log"
+[ -s "$TMP/stdout.log" ] || fail "nothing on stdout"
+[ ! -s "$TMP/stderr.log" ] || { cat "$TMP/stderr.log" >&2; fail "something on stderr"; }
+# Parsed by the image's own node: every line a JSON object with the standard fields; the expected events; never
+# the conversation ("Bonjour", Henri's answer), the key or an IP.
+dk run --rm -i --network none --entrypoint node "$IMAGE" -e '
+let t = ""; process.stdin.on("data", d => t += d).on("end", () => {
+  const lines = t.split("\n").filter(Boolean), events = []
+  for (const l of lines) {
+    const o = JSON.parse(l)
+    const k = Object.keys(o).slice(0, 6).join(",")
+    if (k !== "ts,level,service,version,event,msg" || o.service !== "henryivrevival" || !/^\d{4}-\d\d-\d\dT[\d:]{8}\.\d{3}Z$/.test(o.ts))
+      throw new Error("not a standard log line: " + l)
+    events.push(o.level + ":" + o.event)
+  }
+  const want = ["info:startup", "error:request_failed", "info:shutdown"]   // + a request_slow if the runner is slow
+  const got = events.filter(e => e !== "warn:request_slow")
+  if (got.join(" ") !== want.join(" ")) throw new Error("events: " + events.join(" ") + " (want " + want.join(" ") + ")")
+  const failed = lines.map(l => JSON.parse(l)).find(o => o.event === "request_failed")
+  if (failed.route !== "/chat/send" || failed.status !== 502 || failed.openai_status !== 400 || !failed.err) throw new Error("request_failed line: " + JSON.stringify(failed))
+  if (/Bonjour|BOOM|Ventre-saint-gris|sk-smoke|127\.0\.0\.1|172\.1/.test(t)) throw new Error("conversation, key or IP in the log")
+  console.log("log lines OK: " + events.join(" "))
+})' <"$TMP/stdout.log" || { cat "$TMP/stdout.log" >&2; fail "logs are not the standard JSON lines"; }
+
 SMOKE_OK=1
 echo "SMOKE OK ($IMAGE)"
