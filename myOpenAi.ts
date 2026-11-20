@@ -4,7 +4,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-dotenv.config();
+// quiet: dotenv would print a banner line; the logs are one JSON object per line (log.ts).
+dotenv.config({ quiet: true });
 
 // Outside the app directory, so the image can run with a read-only rootfs (tmpfs /tmp).
 export const TMP_AUDIO_FILE = path.join(os.tmpdir(), 'henry-tmp.mp3');
@@ -68,7 +69,6 @@ export async function completeMessages(turns: { role: 'user' | 'assistant', cont
     safety_identifier: safetyIdentifier,
   };
   const chatCompletion: OpenAI.Chat.ChatCompletion = await OpenAIClient.chat.completions.create(params as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming);
-  console.log(chatCompletion.choices[0].message.content);
   return chatCompletion.choices[0].message.content;
 }
 
