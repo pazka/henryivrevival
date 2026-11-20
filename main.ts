@@ -105,8 +105,7 @@ const server = app.listen(PORT, () => {
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     process.on(signal, () => {
         log.info('shutdown', 'stopping', { signal, uptime_s: Math.round(process.uptime()) });
-        server.close(() => process.exit(0));
-        server.closeIdleConnections();
+        server.close(() => process.exit(0)); // also closes idle keep-alive connections (Node >= 19)
         setTimeout(() => process.exit(0), 1000).unref();
     });
 }

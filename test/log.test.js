@@ -255,6 +255,7 @@ before(async () => {
 after(() => {
     info.stop()
     debug.stop()
+    fake.closeAllConnections()
     fake.close()
 })
 
@@ -290,7 +291,8 @@ test('server: the startup line says tmp_writable:false and static_files:false wh
         assert.ok(st[0].config.includes('LOG_LEVEL') && st[0].config.includes('OPENAI_CHAT_MODEL'))
         const h = await fetch(s.base + '/healthz')
         assert.equal(h.status, 503, 'still serves (and reports the same)')
-        assert.deepEqual([(await h.json()).tmp_writable], [false])
+        const hj = await h.json()
+        assert.deepEqual([hj.tmp_writable, hj.static_files], [false, false])
         await sleep(50)
         assert.ok(s.lines().some(o => o.event === 'healthz' && o.level === 'debug'))
         assert.equal(s.err, '', 'nothing on stderr (no dotenv banner)')
@@ -444,8 +446,18 @@ test('server (APP_LOG_LEVEL=debug): /healthz and every request at debug, by rout
     assert.equal(debug.err, '')
 })
 
-test('server: every stdout line is a standard JSON line; SIGTERM writes one shutdown line and exits 0', async () => {
+test('server: every stdout line is a standard JSON line; SIGTERM / SIGINT write one shutdown line and exit 0 within about 1 s', async () => {
     for (const [s, signal] of [[info, 'SIGTERM'], [debug, 'SIGINT']]) {
+        // SIGTERM (docker stop): an answer still waiting for OpenAI (8 s) must not hold the stop (docker would
+        // SIGKILL after 10 s): exit 0 after at most 1 s. SIGINT: nothing in flight, exit 0 once the server is closed.
+        let pending = null
+        if (signal === 'SIGTERM') {
+            chatReply = () => ({...completion('late'), delay: 8000})
+            calls.length = 0
+            pending = send(s.base, [{role: 'user', content: 'Bonjour'}]).catch(() => 'cut')
+            while (!calls.some(c => c.url.endsWith('/chat/completions'))) await sleep(20)
+        }
+        const t0 = Date.now()
         s.proc.kill(signal)
         const code = await new Promise((r, j) => {
             if (s.proc.exitCode !== null) return r(s.proc.exitCode)
@@ -453,6 +465,8 @@ test('server: every stdout line is a standard JSON line; SIGTERM writes one shut
             s.proc.on('exit', c => { clearTimeout(t); r(c) })
         })
         assert.equal(code, 0, signal)
+        assert.ok(Date.now() - t0 < 3000, `${signal}: exit after ${Date.now() - t0} ms`)
+        if (pending) await pending
         const lines = s.out.split('\n').filter(Boolean)
         for (const l of lines) {
             const o = JSON.parse(l)
