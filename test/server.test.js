@@ -63,6 +63,8 @@ async function startApp(port, env = {}) {
         env: {...process.env, PORT: String(port), OPENAI_API_KEY: 'sk-test-not-a-key',
             OPENAI_BASE_URL: `http://127.0.0.1:${fake.address().port}/v1`, TMPDIR: require('node:os').tmpdir() + `/henry-${port}`, ...env},
     })
+    // a fresh temp dir: an mp3 left by an earlier run would answer the "no mp3 yet" check
+    require('node:fs').rmSync(require('node:os').tmpdir() + `/henry-${port}`, {recursive: true, force: true})
     require('node:fs').mkdirSync(require('node:os').tmpdir() + `/henry-${port}`, {recursive: true})
     p.stdout.on('data', d => { log += d })
     p.stderr.on('data', d => { log += d })
