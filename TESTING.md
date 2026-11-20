@@ -9,7 +9,7 @@ to OpenAI**: a local fake answers through `OPENAI_BASE_URL`, with a dummy key.
 # server tests: black-box, compile with tsc then spawn `node dist/main.js` against a fake OpenAI
 docker run --rm -v "$PWD":/src:ro node:26-alpine sh -c \
   'mkdir /a && cd /src && tar --exclude=./node_modules -cf - . | tar -xf - -C /a && cd /a \
-   && npm ci --ignore-scripts && npx tsc && node --test --test-reporter=spec test/server.test.js'
+   && npm ci --ignore-scripts && npx tsc && node --test --test-reporter=spec test/server.test.js test/log.test.js'
 
 # container smoke: the built image hardened (non-root, read-only rootfs), fake OpenAI inside the container
 docker build -t henryivrevival:smoke . && bash scripts/smoke.sh henryivrevival:smoke
@@ -24,7 +24,7 @@ bash scripts/compose-smoke.sh template henryivrevival:smoke   # hosh-deploy comp
 ## CI
 
 `ci.yml` (PRs, `main`, `agent/**`, no secret, pushes nothing): `server tests (node 26)` (`npm ci`,
-`npm run build`, tests),
+`npm run build`, `test/server.test.js` + `test/log.test.js`),
 `container smoke` (`scripts/smoke.sh`, then `scripts/compose-smoke.sh legacy` and `template`), `visual regression`
 (`visual/run.sh`, see "Visual use cases"; shots, diffs and `report.json` uploaded as the artifact `visual-<sha>`). `release.yml`
 runs the same tests and smokes before any push, then deploys stable tags through `deploy.yml` (hosh-deploy, a
@@ -46,7 +46,37 @@ answers 502 and the server keeps running; per-visitor and global daily limits; `
 capability fields, key never shown, no OpenAI call); no key ⇒ the server does not start; `check/smoke.js` (the
 POST_DEPLOY of hosh-deploy) passes against a running server without calling OpenAI and fails when it is down.
 
-`scripts/smoke.sh` repeats the round-trip and the protections against the built image.
+`scripts/smoke.sh` repeats the round-trip and the protections against the built image, then stops it (`docker stop`:
+exit code 0) and checks its logs: stdout is only standard JSON lines (parsed by the image's own node), the events are
+exactly `startup`, `request_failed` (the OpenAI error: `/chat/send`, 502, `openai_status`, `err`) and `shutdown` (a
+`request_slow` is tolerated on a slow runner), nothing on stderr, and no conversation text, key or IP.
+
+## Logs (`test/log.test.js`, 18 tests; hosh-management AGENTS.md §11)
+
+`log.ts` writes one JSON object per line on stdout: `ts` (UTC, ms), `level`, `service` (`henryivrevival`), `version`
+(`APP_VERSION`, baked into release images by `release.yml` through the Dockerfile's `ARG VERSION`; `dev` otherwise),
+`event`, `msg`, then the line's fields. `LOG_LEVEL` (else `APP_LOG_LEVEL`) sets the level, default `info`.
+At info the server writes only: `startup` (port, `tmp_writable`, `static_files`, models, `log_level`, the NAMES of
+the config variables that are set), `request_failed` (any 5xx, at error, with `err` {type, message, stack};
+an OpenAI failure adds `openai_status`), `request_slow` (> 1 s, at warn) and `shutdown` (SIGTERM / SIGINT, exit 0).
+`debug` adds `/healthz` and every other request. Request lines carry `req_id` (the edge's `X-Request-Id` when it is
+a plain token of at most 64 characters, else a new UUID; returned on every answer), `method`, `route` (the template,
+never the raw path or query), `status`, `dur_ms`. Never logged: the visitor's or Henri's words (`myOpenAi.ts` used to
+print every reply), a body, a query, an IP, a user agent, the key (also masked as OpenAI's 401 shows it). Express's own
+stderr print of errors is off (`env` `test` unless `production`: answers unchanged) and dotenv loads quietly, so stderr
+is left for crashes (no key: the server still refuses to start, on stderr).
+
+The tests cover, on `dist/log.js`: the line format, level filtering and `LOG_LEVEL`/`APP_LOG_LEVEL`, config names
+without values, `err` cleaning (hidden words, key shapes, frames only), request ids, route templates, and the request
+logger on a real Express app with a fake clock (5xx with and without `err`, recorded failure fields, exactly 1 s not
+slow, 1001 ms slow, 4xx and `/healthz` silent at info, debug lines). On the real server (`dist/main.js`, fake OpenAI):
+the startup line (`deepEqual` on its full key list and values), `tmp_writable:false` / `static_files:false` with
+`LOG_LEVEL` from a `.env` (nothing on stderr), a chat round-trip that logs nothing, an OpenAI 401 as one
+`request_failed` line (full key list, `AuthenticationError`, no key, no conversation, no user agent, no IP), an error
+inside Express (an unreadable answer mp3 → 500 through `errorRecorder`; as root the server runs as uid 65534, never
+skipped), a slow chat (`request_slow`), refused requests (bad JSON, 400, 413, 403, 404) silent with nothing on
+stderr, `X-Request-Id` echoed or replaced, debug lines by route without IP/path/query, and SIGTERM and SIGINT each
+writing one `shutdown` line and exiting 0, with every stdout line a standard JSON line.
 
 `scripts/compose-smoke.sh legacy` (step of `container smoke`) pins what the move to hosh-deploy must keep: it
 runs the image with the box's **current legacy compose** (verbatim: `env_file: .env`, `127.0.0.1:9988:3000`,

@@ -102,6 +102,10 @@ commit the route + routes.yml in `/root/hosh-deploy`; port registry: 9139 `live`
 | `TRUST_PROXY_HOPS` | `1` | optional | proxy hops before the app (Traefik via docker-proxy) |
 | `SAFETY_ID_SALT` | random per process | optional | salt of the hashed `safety_identifier` |
 | `PORT` | `3000` in the image | compose | the hosh-deploy compose sets `8000`; the legacy compose keeps 3000 |
+| `LOG_LEVEL` (or `APP_LOG_LEVEL`) | unset = `info` | optional | `debug` adds `/healthz` and every request (route template only) to the logs |
+
+`APP_VERSION` (the `version` of every log line) is baked into the image by `release.yml` (`--build-arg VERSION=<tag>`);
+other builds say `dev`.
 
 ## 3. Capability checks (what "works" means: never calls OpenAI, it costs money)
 
@@ -135,9 +139,15 @@ OpenAI (`scripts/smoke.sh`, `scripts/compose-smoke.sh`).
 - Backward compatible: the image still defaults to port 3000 and user `node`, so the legacy compose works
   unchanged until the cutover; the hosh-deploy compose sets `PORT=8000` and `user: 10001:10001`.
 - `/healthz` proves configuration, not OpenAI reachability (a real call costs money); a wrong or revoked key
-  shows as 502 apologies on `/chat/send`, logged as `chat/send failed: 401 …`.
+  shows as 502 apologies on `/chat/send`, logged as a `request_failed` line with `openai_status: 401` and
+  `err.type: "AuthenticationError"` (the key never appears, not even masked).
 - `X-Forwarded-For`: trusted for `TRUST_PROXY_HOPS` (1) hop, i.e. the docker-proxy peer; the port is
   loopback-only so that peer is always Traefik.
-- Logs are plain text lines (`console.log`), not JSON (unchanged from legacy).
+- Logs follow the hosh.it standard (hosh-management AGENTS.md §11, TESTING.md "Logs"): one JSON object per line on
+  stdout with `version` = the release tag; no access log (Traefik has it), only `startup`, `shutdown`, 5xx
+  (`request_failed`, with `err`; an OpenAI failure adds `openai_status`) and requests slower than 1 s (`request_slow`:
+  a chat answer, which waits for OpenAI, can be one). Every answer carries `X-Request-Id`. Never the conversation,
+  a body, a path, a query, an IP, a user agent or the key. `docker stop` now ends the container at once (SIGTERM
+  handler, exit 0) instead of after docker's 10 s timeout.
 - `publish.yml` (Docker Hub `pazka/henryivrevival:latest`, push to `main`) and `build-scan-push.yml` (ghcr `:ci` +
   `:<sha>`, push to `main`) are unchanged.
