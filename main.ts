@@ -34,18 +34,21 @@ app.post('/chat/send', async (req, res) => {
     const limited = rateLimit(req.ip || '');
     if (limited) return res.status(429).send(limited);
 
+    // Henri's reply of this request is not in `turns`: it is the TTS input, kept here so an error quoting it is hidden.
+    let spoken = '';
     try {
         const visitorText = turns[turns.length - 1].content;
         const completion = await openaiClient.isFlagged(visitorText)
             ? openaiClient.MODERATED_ANSWER
             : await openaiClient.completeMessages(turns, safetyIdentifier(req));
-        await openaiClient.createMp3FromText(completion || FALLBACK);
+        spoken = completion || FALLBACK;
+        await openaiClient.createMp3FromText(spoken);
         res.send(completion);
     } catch (err: any) {
         // An OpenAI error used to be an unhandled rejection that killed the process. Logged by the request line
-        // (request_failed) without the conversation or the key.
+        // (request_failed) without the conversation (the turns and this request's reply) or the key.
         recordFailure(res, {
-            err, hide: [...turns.map(t => t.content), process.env.OPENAI_API_KEY || ''],
+            err, hide: [...turns.map(t => t.content), spoken, process.env.OPENAI_API_KEY || ''],
             fields: typeof err?.status === 'number' ? { openai_status: err.status } : {},
         });
         res.status(502).send(FALLBACK);

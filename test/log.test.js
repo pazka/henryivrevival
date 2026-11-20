@@ -192,7 +192,7 @@ test('requests: 5xx at error with err, slow (> 1 s) at warn, others and /healthz
 // ---- the real server (dist/main.js), black box, against a fake OpenAI -----------------------------------------
 
 const calls = []
-let fake, chatReply
+let fake, chatReply, speechReply, moderationReply
 function completion(content) {
     return {status: 200, json: {id: 'c1', object: 'chat.completion', created: 1, model: 'gpt-5.6-sol',
         choices: [{index: 0, finish_reason: 'stop', message: {role: 'assistant', content}}]}}
@@ -233,11 +233,22 @@ before(async () => {
         req.on('data', c => { body += c })
         req.on('end', async () => {
             calls.push({url: req.url, body: JSON.parse(body || '{}')})
+            const parsed = JSON.parse(body || '{}')
             if (req.url.endsWith('/audio/speech')) {
+                const failed = speechReply && speechReply(parsed)
+                if (failed) {
+                    res.writeHead(failed.status, {'content-type': 'application/json'})
+                    return res.end(JSON.stringify(failed.json))
+                }
                 res.writeHead(200, {'content-type': 'audio/mpeg'})
                 return res.end('ID3fake')
             }
             if (req.url.endsWith('/moderations')) {
+                const failed = moderationReply && moderationReply(parsed)
+                if (failed) {
+                    res.writeHead(failed.status, {'content-type': 'application/json'})
+                    return res.end(JSON.stringify(failed.json))
+                }
                 res.writeHead(200, {'content-type': 'application/json'})
                 return res.end(JSON.stringify({id: 'm', results: [{flagged: false, categories: {}, category_scores: {}}]}))
             }
@@ -339,6 +350,50 @@ test('server: an OpenAI error is one request_failed line with err and openai_sta
     assert.match(e.err.stack, /^AuthenticationError: 401 Incorrect API key provided: <hidden>\. Input was "<hidden>"\n\s+at /)
     const line = JSON.stringify(e)
     for (const s of [`Bonjour ${m}`, 'Input was "B', 'sk-test', `ua-${m}`, '203.0.113', '127.0.0.1']) assert.ok(!line.includes(s), s)
+    assert.equal(info.err, '')
+})
+
+// The reply produced in this request is not in the turns sent by the browser: it is the TTS input, and an error that
+// quotes its input must not put Henri's words in the log (nor the visitor's, quoted by a moderation error).
+async function failedTurnLine(m) {
+    const r = await send(info.base, [{role: 'user', content: `Bonjour ${m}-visitor`}], {'x-request-id': `req-${m}`})
+    assert.equal(r.status, 502)
+    assert.equal(await r.text(), "Il semble que je n'ai pas de réponse à vous donner, je suis désolé.")
+    await sleep(100)
+    const errs = info.lines().filter(o => o.req_id === `req-${m}`)
+    assert.equal(errs.length, 1, info.out)
+    return errs[0]
+}
+
+test('server: a TTS error that quotes its input is one request_failed line with openai_status, without Henri\'s reply or the visitor\'s words', async () => {
+    const m = mark()
+    chatReply = () => completion(`Ventre-saint-gris ${m}-reply`)
+    speechReply = b => ({status: 400, json: {error: {message: `Invalid input: "${b.input}"`, type: 'invalid_request_error'}}})
+    try {
+        const e = await failedTurnLine(m)
+        assert.deepEqual([e.level, e.event, e.route, e.status, e.openai_status], ['error', 'request_failed', '/chat/send', 502, 400])
+        assert.equal(e.err.message, '400 Invalid input: "<hidden>"')
+        assert.match(e.err.stack, /^BadRequestError: 400 Invalid input: "<hidden>"\n\s+at /)
+        assert.ok(calls.some(c => c.url.endsWith('/audio/speech') && c.body.input === `Ventre-saint-gris ${m}-reply`), 'the TTS got the reply')
+    } finally {
+        speechReply = undefined
+    }
+    for (const s of [`${m}-reply`, `${m}-visitor`, 'Ventre-saint-gris']) assert.ok(!info.out.includes(s), s)
+    assert.equal(info.err, '')
+})
+
+test('server: a moderation error that quotes its input is one request_failed line with openai_status, without the visitor\'s words', async () => {
+    const m = mark()
+    chatReply = () => completion(`Ventre-saint-gris ${m}-reply`)
+    moderationReply = b => ({status: 400, json: {error: {message: `Invalid input: "${b.input}"`, type: 'invalid_request_error'}}})
+    try {
+        const e = await failedTurnLine(m)
+        assert.deepEqual([e.level, e.event, e.route, e.status, e.openai_status], ['error', 'request_failed', '/chat/send', 502, 400])
+        assert.equal(e.err.message, '400 Invalid input: "<hidden>"')
+    } finally {
+        moderationReply = undefined
+    }
+    for (const s of [`${m}-reply`, `${m}-visitor`]) assert.ok(!info.out.includes(s), s)
     assert.equal(info.err, '')
 })
 

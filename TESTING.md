@@ -51,7 +51,7 @@ exit code 0) and checks its logs: stdout is only standard JSON lines (parsed by 
 exactly `startup`, `request_failed` (the OpenAI error: `/chat/send`, 502, `openai_status`, `err`) and `shutdown` (a
 `request_slow` is tolerated on a slow runner), nothing on stderr, and no conversation text, key or IP.
 
-## Logs (`test/log.test.js`, 18 tests; hosh-management AGENTS.md §11)
+## Logs (`test/log.test.js`, 20 tests; hosh-management AGENTS.md §11)
 
 `log.ts` writes one JSON object per line on stdout: `ts` (UTC, ms), `level`, `service` (`henryivrevival`), `version`
 (`APP_VERSION`, baked into release images by `release.yml` through the Dockerfile's `ARG VERSION`; `dev` otherwise),
@@ -73,7 +73,9 @@ slow, 1001 ms slow, 4xx and `/healthz` silent at info, debug lines). On the real
 the startup line (`deepEqual` on its full key list and values), `tmp_writable:false` / `static_files:false` with
 `LOG_LEVEL` from a `.env` (nothing on stderr), a chat round-trip that logs nothing, an OpenAI 401 as one
 `request_failed` line (full key list, `AuthenticationError`, no key, no conversation, no user agent, no IP), an error
-inside Express (an unreadable answer mp3 → 500 through `errorRecorder`; as root the server runs as uid 65534, never
+a TTS error and a moderation error
+that quote their input (one `request_failed` line with `openai_status`, neither Henri's reply of that request nor the
+visitor's words anywhere in stdout), an error inside Express (an unreadable answer mp3 → 500 through `errorRecorder`; as root the server runs as uid 65534, never
 skipped), a slow chat (`request_slow`), refused requests (bad JSON, 400, 413, 403, 404) silent with nothing on
 stderr, `X-Request-Id` echoed or replaced, debug lines by route without IP/path/query, and SIGTERM and SIGINT each
 writing one `shutdown` line and exiting 0, with every stdout line a standard JSON line.
